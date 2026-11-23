@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>문제 관리</title>
+<style>
+:root{color:#233734;background:#eef3f1;font:16px/1.55 system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:1420px;margin:auto;padding:28px 22px}
+h1,h2,p{margin:0 0 12px}
+header{margin-bottom:20px}
+small,.muted{color:#566e66}
+.layout{display:grid;grid-template-columns:minmax(330px,410px) minmax(0,1fr);gap:18px;align-items:start}
+.panel{background:white;border:1px solid #c8d9d1;border-radius:12px;padding:16px;min-width:0}
+.toolbar,.option-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+fieldset{margin:0;padding:0;border:0;min-width:0}
+.filter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.filter-grid label,.search-label{display:block;font-size:.875rem;font-weight:700}
+.filter-grid select{display:block;width:100%;margin-top:4px;padding-inline:7px;font-size:.875rem}
+.filter-help,.card-location,.preview-meta{font-size:.875rem}
+.filter-help{margin:6px 0 0}
+.filter-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+#match-count{margin:0}
+.filter-actions button,.pager button{font-size:.875rem;padding:5px 9px}
+.filter-summary{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.filter-summary:empty{display:none}
+.filter-summary button{background:#eef6f2;font-size:.8rem;padding:3px 7px}
+.advanced-filters{margin:12px 0;border-block:1px solid #dce7e2;padding:8px 0}
+.advanced-filters .filter-grid{margin:8px 0 2px}
+button,input,textarea,select{font:inherit;color:inherit}
+button,select,input[type=search],textarea{background:white;border:1px solid #aac1b7;border-radius:7px;padding:8px 10px}
+button{cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+.primary{background:#236348;color:white;border-color:#236348;font-weight:700}
+input[type=search],textarea{width:100%}
+textarea{display:block;resize:vertical;min-height:72px;margin-top:5px}
+.question-list{display:grid;gap:8px;max-height:60vh;overflow:auto;margin-top:10px;padding:2px}
+.question-card{text-align:left;overflow-wrap:anywhere;padding:10px;border-color:#c8d9d1}
+.question-card:hover,.question-card[aria-current=true]{background:#eef7f2;border-color:#357f60}
+.question-card[aria-current=true]{box-shadow:inset 3px 0 #357f60}
+.card-topic,.card-text,.card-location{display:block}
+.card-topic{font-weight:750;margin:5px 0 2px}
+.card-text{line-height:1.45}
+.card-location{color:#566e66;margin-top:5px}
+.tags{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+.tag{display:inline-block;background:#edf3f0;border-radius:5px;padding:2px 6px;color:#345247;font-size:.78rem;font-weight:650}
+.tag-format{background:#dcece4;color:#244d3b}
+.tag-edited{background:#f8eed1;color:#624b12}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:.875rem}
+.pager[hidden]{display:none}
+.preview-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.preview-header h2{margin:7px 0 3px}
+.preview-meta{margin-bottom:12px}
+.preview-prompt{white-space:pre-wrap;margin:12px 0 8px}
+.preview-claim,.preview-explanation{background:#f3f7f5;padding:12px 14px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.preview-options{display:grid;gap:7px;padding:0;list-style:none;margin:0 0 12px}
+.preview-options li{border:1px solid #c8d9d1;padding:9px 12px;border-radius:7px;white-space:pre-wrap;overflow-wrap:anywhere}
+.preview-options .correct{background:#e8f5ed;border-color:#398264}
+.preview-answer{font-weight:750;color:#236348}
+.preview-explanation h3{margin:0 0 5px;font-size:1rem}
+.preview-explanation p{margin-bottom:0}
+.preview-evidence{padding-left:22px}
+.preview-evidence li{margin:5px 0}
+.field,.option,.evidence-item{display:block;margin:13px 0}
+.option{padding:12px;border:1px solid #c8d9d1;border-radius:8px}
+.option.correct{border-color:#398264;background:#f0f9f3}
+.option-tools b{margin-right:auto}
+summary{cursor:pointer;font-weight:650}
+.passage{white-space:pre-wrap;max-height:260px;overflow:auto;margin-top:8px;background:#f3f7f5;padding:12px;border-radius:7px}
+details{margin:14px 0}
+#status{min-height:1.6em;margin:10px 0;color:#236348}
+#status.error{color:#9b3828}
+@media(max-width:760px){main{padding:16px 10px}.layout{grid-template-columns:1fr}.question-list{max-height:42vh}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>문제 관리</h1>
+<p class="muted">조건을 골라 문항을 찾고, 목록에서 문항을 누르면 정답과 해설을 볼 수 있습니다.</p>
+<div class="toolbar">
+<button id="build" class="primary" type="button" disabled>학생용 HTML · 배포 ZIP 만들기</button>
+<span id="saved-count" class="muted"></span>
+</div>
+<p id="status" role="status" aria-live="polite">문항을 불러오는 중입니다.</p>
+<form id="online-login" hidden>
+<label for="editor-key">문제 편집 키</label>
+<input id="editor-key" type="password" required autocomplete="off">
+<button type="submit">편집 열기</button>
+</form>
+</header>
+<div class="layout">
+<aside class="panel" aria-label="문항 찾기">
+<h2>문제 목록</h2>
+<fieldset id="filter-controls" disabled>
+<label class="search-label" for="search">키워드 검색</label>
+<input id="search" type="search" placeholder="예: 입장권 무료, U22-08" aria-describedby="search-help">
+<p id="search-help" class="muted filter-help">문제, 선지, 해설, 문항 ID에서 찾습니다. 띄어 쓰면 모든 검색어가 들어간 문제만 나옵니다.</p>
+<div class="filter-grid">
+<label for="unit">단원<select id="unit"><option value="">모든 단원</option></select></label>
+<label for="paragraph">출제 문단<select id="paragraph" aria-describedby="paragraph-help"><option value="">모든 문단</option></select></label>
+<label for="type">문제 형식<select id="type"><option value="">모든 형식</option></select></label>
+<label for="category">학습 구분<select id="category"><option value="">모든 구분</option></select></label>
+</div>
+<p id="paragraph-help" class="muted filter-help">출제 문단은 문제에 나온 본문을 기준으로 찾습니다. 괄호 안 숫자는 해당 조건의 문항 수입니다.</p>
+<details class="advanced-filters" id="advanced-filters">
+<summary>상세 필터 <span id="advanced-count" class="muted"></span></summary>
+<div class="filter-grid">
+<label for="chapter">챕터<select id="chapter"><option value="">모든 챕터</option></select></label>
+<label for="set">문제 세트<select id="set"><option value="">모든 세트</option></select></label>
+<label for="stage">핵심 OX 단계<select id="stage"><option value="">모든 단계</option></select></label>
+<label for="skill">선지 변형 유형<select id="skill"><option value="">모든 변형 유형</option></select></label>
+<label for="answer">정답<select id="answer"><option value="">모든 정답</option></select></label>
+<label for="edited">편집 상태<select id="edited"><option value="">모든 상태</option></select></label>
+</div>
+</details>
+<div class="filter-actions">
+<p id="match-count" class="muted" role="status"></p>
+<button id="clear-filters" type="button" disabled>필터 초기화</button>
+</div>
+<div id="active-filters" class="filter-summary" aria-label="적용된 필터"></div>
+</fieldset>
+<div id="list" class="question-list" aria-label="검색 결과"></div>
+<div id="pager" class="pager" aria-label="검색 결과 페이지" hidden>
+<button id="prev-page" type="button">← 이전</button>
+<span id="page-range"></span>
+<button id="next-page" type="button">다음 →</button>
+</div>
+</aside>
+<section class="panel" id="editor" aria-label="문항 상세"><h2>문항 상세</h2><p class="muted">목록에서 문항을 선택하면 참고 지문, 선지, 정답과 해설을 여기서 볼 수 있습니다.</p></section>
+</div>
+</main>
+<script src="student-settings.js?v=1d8c1198e5fe"></script>
+<script src="assets/question-patches.js?v=6f0aec9bf44c"></script>
+<script src="assets/question-editor-online.js?v=a1170684c351"></script>
+<script>window.HOMEWORK_EDITOR_CATALOG="data/question-editor-online.json?v=a70ad6ea4392";</script>
+<script>
+'use strict';
+const byId = id => document.getElementById(id);
+const online = window.HomeworkOnlineEditor;
+const element = (tag, text) => {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  return node;
+};
+const button = (text, action, className = '') => {
+  const node = element('button', text);
+  node.type = 'button';
+  node.className = className;
+  node.onclick = action;
+  return node;
+};
+let questions = [], edits = {}, selected = null, draft = null;
+let dirty = false, busy = false, loaded = false;
+let page = 0;
+const pageSize = 20;
+const compare = new Intl.Collator('ko', {numeric: true}).compare;
+const unitTitles = new Map();
+const formatLabels = {ox: '기본 OX', mc: '심화 5지선다'};
+const categoryLabels = {
+  core: '문단별 핵심 OX',
+  reading: '본문 확인',
+  example: '쉬운 예시·새 사례 적용',
+  concept: '보충 개념',
+};
+const fields = [
+  ['unit', '단원', '모든 단원', value => `${value}단원${unitTitles.get(value) ? ' · ' + unitTitles.get(value) : ''}`],
+  ['paragraph', '출제 문단', '모든 문단', value => value === 'concept' ? '본문 문단 없음' : `${value}문단`],
+  ['type', '문제 형식', '모든 형식', value => formatLabels[value]],
+  ['category', '학습 구분', '모든 구분', value => categoryLabels[value]],
+  ['chapter', '챕터', '모든 챕터'],
+  ['set', '문제 세트', '모든 세트'],
+  ['stage', '핵심 OX 단계', '모든 단계'],
+  ['skill', '선지 변형 유형', '모든 변형 유형'],
+  ['answer', '정답', '모든 정답', value => /^\d+$/.test(value) ? `${value}번 선지` : value],
+  ['edited', '편집 상태', '모든 상태', value => ({saved:'수정 저장됨', original:'원본', stale:'원본 변경 확인 필요'})[value]],
+];
+
+function savedVersion(q) {
+  return edits[q.id] || q.original;
+}
+function answerLabel(q, current) {
+  if (q.type === 'ox') return current.answer;
+  const index = current.options.findIndex(row => row.source === current.answer);
+  return index < 0 ? '' : String(index + 1);
+}
+function editState(q) {
+  if (!edits[q.id]) return 'original';
+  return edits[q.id].sourceVersion === q.sourceVersion ? 'saved' : 'stale';
+}
+function describe(q) {
+  const stage = /^\d+단계 · /.test(q.part) ? q.part : '';
+  const topic = stage ? q.set : q.part.replace(/^U[\w-]+ · /, '');
+  const paragraphs = (q.paragraphs || []).map(String);
+  const category = stage ? 'core' : /예시/.test(q.set) ? 'example' : paragraphs.length ? 'reading' : 'concept';
+  return {stage, topic, paragraphs, category};
+}
+function filterValues(q, current) {
+  const {stage, paragraphs, category} = describe(q);
+  return {
+    unit: [q.unit],
+    paragraph: paragraphs.length ? paragraphs : ['concept'],
+    type: [q.type],
+    category: [category],
+    chapter: [q.chapter].filter(Boolean),
+    set: [q.set],
+    stage: [stage].filter(Boolean),
+    skill: q.skills || [],
+    answer: [answerLabel(q, current)].filter(Boolean),
+    edited: [editState(q)],
+  };
+}
+function readFilters() {
+  return Object.fromEntries(fields.map(([id]) => [id, byId(id).value]));
+}
+
+function status(message, error = false) {
+  byId('status').textContent = message;
+  byId('status').classList.toggle('error', error);
+}
+function updateButtons() {
+  byId('build').disabled = !loaded || dirty || busy;
+  byId('saved-count').textContent = `저장한 수정 ${Object.keys(edits).length}문항${dirty ? ' · 현재 문항에 저장하지 않은 변경 있음' : ''}`;
+  const save = byId('save');
+  if (save) save.disabled = !dirty || busy || draft.sourceVersion !== selected.sourceVersion;
+}
+function changed() {
+  dirty = true;
+  updateButtons();
+}
+async function request(path, payload) {
+  if (online) return online.request(path, payload);
+  const response = await fetch(path, payload === undefined ? {} : {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  return data;
+}
+async function runAction(action) {
+  if (busy) return;
+  busy = true;
+  const fields = byId('editor').querySelectorAll('input,textarea,button');
+  const prior = Array.from(fields, field => field.disabled);
+  fields.forEach(field => { field.disabled = true; });
+  updateButtons();
+  try { await action(); }
+  catch (error) { status(error.message || '작업을 완료하지 못했습니다.', true); }
+  finally {
+    fields.forEach((field, i) => { field.disabled = prior[i]; });
+    busy = false;
+    updateButtons();
+  }
+}
+function filterResults(active, query) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = [];
+  const counts = Object.fromEntries(fields.map(([id]) => [id, new Map()]));
+  for (const q of questions) {
+    const current = savedVersion(q);
+    const values = filterValues(q, current);
+    const missing = fields.filter(([id]) => active[id] && !values[id].includes(active[id]));
+    const text = [q.id, q.unit, unitTitles.get(q.unit), q.set, q.part, q.chapter, ...values.skill,
+      current.prompt, current.claim, current.why, ...(current.options || []).map(row => row.text)].join(' ').toLowerCase();
+    const searched = terms.every(term => text.includes(term));
+    if (searched && !missing.length) matches.push(q);
+    for (const [id] of fields) {
+      const countHere = searched && (!missing.length || (missing.length === 1 && missing[0][0] === id));
+      for (const value of values[id]) counts[id].set(value, (counts[id].get(value) || 0) + Number(countHere));
+    }
+  }
+  return {matches, counts};
+}
+function clearFilters() {
+  byId('search').value = '';
+  for (const [id] of fields) byId(id).value = '';
+  refreshResults();
+}
+function refreshResults() {
+  page = 0;
+  paintList(true);
+}
+function paintFilters(active, query, counts, total) {
+  const applied = byId('active-filters');
+  applied.replaceChildren();
+  if (query) applied.append(button(`검색: ${query} ×`, () => {
+    byId('search').value = '';
+    refreshResults();
+    byId('search').focus();
+  }));
+  for (const [id, label, all, format = value => value] of fields) {
+    const select = byId(id), chosen = active[id];
+    const option = (text, value) => {
+      const node = element('option', text);
+      node.value = value;
+      return node;
+    };
+    select.replaceChildren(option(all, ''));
+    for (const [value, count] of [...counts[id]].sort(([a], [b]) => compare(a, b))) {
+      if (count || value === chosen) select.append(option(`${format(value)} (${count})`, value));
+    }
+    select.value = chosen;
+    if (chosen) {
+      const chip = button(`${label}: ${format(chosen)} ×`, () => {
+        select.value = '';
+        refreshResults();
+        (select.closest('details:not([open])')?.querySelector('summary') || select).focus();
+      });
+      chip.setAttribute('aria-label', `${label} 필터 제거: ${format(chosen)}`);
+      applied.append(chip);
+    }
+  }
+  const count = fields.slice(4).filter(([id]) => active[id]).length;
+  byId('advanced-count').textContent = count ? `(${count}개 적용 중)` : '';
+  byId('clear-filters').disabled = !applied.children.length;
+  byId('match-count').textContent = `전체 ${questions.length}문항 중 ${total}문항`;
+}
+function tags(q) {
+  const box = element('span');
+  box.className = 'tags';
+  const {paragraphs} = describe(q);
+  for (const [label, extra] of [
+    [`${q.unit}단원`, ''],
+    [paragraphs.length ? `${paragraphs.join('·')}문단` : '보충 개념', ''],
+    [formatLabels[q.type], ' tag-format'],
+    [editState(q) === 'stale' ? '원본 변경' : edits[q.id] ? '수정 저장됨' : '', ' tag-edited'],
+  ]) {
+    if (!label) continue;
+    const tag = element('span', label);
+    tag.className = 'tag' + extra;
+    box.append(tag);
+  }
+  return box;
+}
+function paintList(scrollToTop = false) {
+  const list = byId('list'), scroll = list.scrollTop;
+  const active = readFilters(), query = byId('search').value.trim();
+  const {matches, counts} = filterResults(active, query);
+  paintFilters(active, query, counts, matches.length);
+  const pages = Math.ceil(matches.length / pageSize);
+  page = Math.max(0, Math.min(page, pages - 1));
+  const offset = page * pageSize;
+  list.replaceChildren(...matches.slice(offset, offset + pageSize).map(q => {
+    const current = savedVersion(q), {stage, topic} = describe(q);
+    const card = button('', () => openQuestion(q), 'question-card');
+    if (selected?.id === q.id) card.setAttribute('aria-current', 'true');
+    const title = element('span', topic);
+    title.className = 'card-topic';
+    const body = element('span', current.claim || current.prompt);
+    body.className = 'card-text';
+    const location = element('span', [stage || q.set, q.id].filter(Boolean).join(' · '));
+    location.className = 'card-location';
+    card.append(tags(q), title, body, location);
+    return card;
+  }));
+  if (!matches.length) {
+    const empty = element('p', '조건에 맞는 문항이 없습니다. 검색어를 줄이거나 적용된 필터를 지워 보세요.');
+    empty.className = 'muted';
+    list.append(empty);
+  }
+  list.scrollTop = scrollToTop ? 0 : scroll;
+  byId('pager').hidden = pages <= 1;
+  byId('prev-page').disabled = page === 0;
+  byId('next-page').disabled = page >= pages - 1;
+  byId('page-range').textContent = `${page + 1} / ${pages}페이지 · ${offset + 1}–${Math.min(offset + pageSize, matches.length)}번`;
+}
+function setPage(delta) {
+  page += delta;
+  paintList(true);
+  byId('list').querySelector('button')?.focus({preventScroll:true});
+}
+function detailHeading() {
+  const heading = byId('editor').querySelector('h2');
+  heading.tabIndex = -1;
+  heading.focus({preventScroll:true});
+  if (window.matchMedia('(max-width:760px)').matches) heading.scrollIntoView({block:'start'});
+}
+function passageDetails(q) {
+  const details = element('details'), text = element('div', q.passage);
+  text.className = 'passage';
+  details.append(element('summary', '참고 지문 보기'), text);
+  return details;
+}
+function paintPreview() {
+  const q = selected, current = savedVersion(q), editor = byId('editor');
+  const {stage, topic} = describe(q);
+  const header = element('div'), title = element('div');
+  header.className = 'preview-header';
+  title.append(tags(q), element('h2', topic));
+  header.append(title, button('이 문항 편집', () => {
+    if (busy) return;
+    paintEditor();
+    detailHeading();
+  }, 'primary'));
+  const meta = element('p', [q.chapter, stage ? q.set + ' · ' + stage : q.set, q.id].filter(Boolean).join(' · '));
+  meta.className = 'muted preview-meta';
+  editor.replaceChildren(header, meta);
+  if (q.skills?.length) {
+    const skill = element('p', `선지 변형 유형 · ${q.skills.join(', ')}`);
+    skill.className = 'muted preview-meta';
+    editor.append(skill);
+  }
+  if (q.passage) editor.append(passageDetails(q));
+  if (current.prompt) {
+    const prompt = element('p', current.prompt);
+    prompt.className = 'preview-prompt';
+    editor.append(prompt);
+  }
+  if (q.type === 'ox') {
+    const claim = element('p', current.claim);
+    claim.className = 'preview-claim';
+    editor.append(claim);
+  } else {
+    const options = element('ol');
+    options.className = 'preview-options';
+    current.options.forEach((row, index) => {
+      const isAnswer = row.source === current.answer;
+      const item = element('li', `${index + 1}. ${row.text}`);
+      if (isAnswer) {
+        item.className = 'correct';
+        item.append(document.createTextNode(' '), element('strong', '(정답)'));
+      }
+      options.append(item);
+    });
+    editor.append(options);
+    if (!edits[q.id]) editor.append(element('small', '학생 화면에서는 원본 선지 순서가 달라질 수 있습니다.'));
+  }
+  const answer = answerLabel(q, current);
+  const result = element('p', `정답 · ${q.type === 'mc' && answer ? answer + '번 선지' : answer || '확인 필요'}`);
+  result.className = 'preview-answer';
+  editor.append(result);
+  const explanation = element('section');
+  explanation.className = 'preview-explanation';
+  explanation.append(element('h3', '해설'), element('p', current.why || '등록된 해설이 없습니다.'));
+  const evidence = [...new Set((current.valid || []).map(id => q.evidence[id]).filter(Boolean))];
+  if (evidence.length) {
+    const details = element('details'), list = element('ul');
+    list.className = 'preview-evidence';
+    list.append(...evidence.map(text => element('li', text)));
+    details.append(element('summary', `정답 근거 문장 ${evidence.length}개`), list);
+    explanation.append(details);
+  }
+  editor.append(explanation);
+  updateButtons();
+}
+function resetDraft() {
+  const saved = edits[selected.id];
+  draft = structuredClone(saved || {...selected.original, sourceVersion: selected.sourceVersion});
+  dirty = false;
+}
+function openQuestion(q) {
+  if (busy) return;
+  if (selected?.id === q.id) { detailHeading(); return; }
+  if (dirty && !confirm('저장하지 않은 변경을 버리고 다른 문항을 열까요?')) return;
+  selected = q;
+  resetDraft();
+  status('');
+  paintPreview();
+  paintList();
+  detailHeading();
+}
+function textarea(label, value, update) {
+  const wrap = element('label', label);
+  wrap.className = 'field';
+  const input = element('textarea');
+  input.value = value || '';
+  input.oninput = () => { update(input.value); changed(); };
+  wrap.append(input);
+  return wrap;
+}
+function radio(label, name, checked, choose) {
+  const wrap = element('label'), input = element('input');
+  input.type = 'radio';
+  input.name = name;
+  input.checked = checked;
+  input.onchange = () => { choose(); changed(); };
+  wrap.append(input, document.createTextNode(' ' + label));
+  return wrap;
+}
+function paintOptions(container) {
+  container.replaceChildren();
+  draft.options.forEach((row, index) => {
+    const card = element('div'), controls = element('div');
+    card.className = 'option' + (draft.answer === row.source ? ' correct' : '');
+    controls.className = 'option-tools';
+    const move = delta => {
+      const next = index + delta;
+      [draft.options[index], draft.options[next]] = [draft.options[next], draft.options[index]];
+      changed();
+      paintOptions(container);
+      container.children[next].querySelector(delta < 0 ? '.move-up' : '.move-down')?.focus();
+    };
+    const up = button('↑ 위로', () => move(-1), 'move-up');
+    const down = button('↓ 아래로', () => move(1), 'move-down');
+    up.disabled = index === 0;
+    down.disabled = index === draft.options.length - 1;
+    up.setAttribute('aria-label', `${index + 1}번 선지 위로`);
+    down.setAttribute('aria-label', `${index + 1}번 선지 아래로`);
+    controls.append(element('b', `${index + 1}번 선지`), radio('정답', 'answer', draft.answer === row.source, () => {
+      draft.answer = row.source;
+      Array.from(container.children).forEach((node, i) => node.classList.toggle('correct', draft.options[i].source === draft.answer));
+    }), up, down);
+    card.append(controls, textarea(`${index + 1}번 선지 문구`, row.text, value => { row.text = value; }));
+    container.append(card);
+  });
+}
+function paintEditor() {
+  const q = selected, editor = byId('editor');
+  const back = button('← 문항 미리보기', () => {
+    if (busy || (dirty && !confirm('저장하지 않은 변경을 버리고 미리보기로 돌아갈까요?'))) return;
+    resetDraft();
+    paintPreview();
+    detailHeading();
+  });
+  editor.replaceChildren(element('h2', describe(q).topic), element('p', `${q.unit}단원 · ${q.set} · ${q.part} · ${q.id}`), back);
+  const stale = draft.sourceVersion !== q.sourceVersion;
+  if (stale) editor.append(element('p', '원본이 바뀐 문항입니다. 원본으로 되돌린 후 다시 편집해 주세요.'));
+  if (q.passage) editor.append(passageDetails(q));
+  editor.append(textarea('문제 안내', draft.prompt, value => { draft.prompt = value; }));
+  if (q.type === 'mc') {
+    const options = element('div');
+    paintOptions(options);
+    editor.append(options, element('small', '저장한 5지선다는 이 순서로 출제됩니다.'));
+  } else {
+    editor.append(textarea('판단할 문장', draft.claim, value => { draft.claim = value; }));
+    for (const answer of ['O', 'X']) editor.append(radio(`${answer} 정답`, 'answer', draft.answer === answer, () => { draft.answer = answer; }));
+  }
+  editor.append(textarea('해설', draft.why, value => { draft.why = value; }));
+  if (Object.keys(q.evidence).length) {
+    const details = element('details');
+    details.append(element('summary', '정답 근거 문장 선택'));
+    for (const [id, text] of Object.entries(q.evidence)) {
+      const label = element('label'), input = element('input');
+      label.className = 'evidence-item';
+      input.type = 'checkbox';
+      input.checked = draft.valid.includes(id);
+      input.onchange = () => {
+        if (input.checked) draft.valid.push(id);
+        else draft.valid = draft.valid.filter(value => value !== id);
+        changed();
+      };
+      label.append(input, document.createTextNode(' ' + text));
+      details.append(label);
+    }
+    editor.append(details);
+  }
+  const actions = element('div');
+  actions.className = 'toolbar';
+  const save = button('이 문항 저장', () => saveQuestion(draft), 'primary');
+  save.id = 'save';
+  actions.append(save);
+  if (edits[q.id]) actions.append(button('원본으로 되돌리기', () => {
+    if (confirm('저장한 수정을 지우고 원본으로 되돌릴까요?')) saveQuestion(null);
+  }));
+  editor.append(actions);
+  updateButtons();
+}
+function saveQuestion(edit) {
+  const q = selected;
+  if (edit && edit.sourceVersion !== q.sourceVersion) return;
+  void runAction(async () => {
+    if (edit && online && (!window.HomeworkQuestionPatches.validEdit(edit) || (q.original.valid.length && !edit.valid.length))) {
+      throw new Error('문구, 정답, 선지 순서와 근거를 확인해 주세요. 같은 선지 문구는 한 번만 쓸 수 있습니다.');
+    }
+    const result = await request('/api/save', {id: q.id, previous: edits[q.id] || null, edit});
+    if (result.edit) edits[q.id] = result.edit;
+    else delete edits[q.id];
+    resetDraft();
+    paintEditor();
+    paintList();
+    status(online ? '저장했습니다. 학생이 다음 문제 세트를 열 때 반영됩니다.' : '저장했습니다. 배포에 반영하려면 위의 학생용 HTML · 배포 ZIP 만들기를 누르세요.');
+  });
+}
+byId('build').onclick = () => runAction(async () => {
+  status('학생용 HTML과 배포 ZIP을 만드는 중입니다.');
+  await request('/api/build', {});
+  status('만들었습니다. 08_숙제 폴더의 학생용 HTML과 netlify-upload.zip을 사용하세요.');
+});
+byId('search').addEventListener('input', refreshResults);
+for (const [id] of fields) byId(id).addEventListener('change', refreshResults);
+byId('clear-filters').onclick = () => { clearFilters(); byId('search').focus(); };
+byId('prev-page').onclick = () => setPage(-1);
+byId('next-page').onclick = () => setPage(1);
+window.addEventListener('beforeunload', event => {
+  if (dirty) { event.preventDefault(); event.returnValue = ''; }
+});
+async function loadQuestions() {
+  try {
+    ({questions, edits} = await request('/api/questions'));
+    for (const q of questions) unitTitles.set(q.unit, q.unitTitle);
+    questions.sort((a, b) => compare(a.unit, b.unit)
+      || ((a.paragraphs?.[0] ?? Infinity) - (b.paragraphs?.[0] ?? Infinity) || 0));
+    loaded = true;
+    byId('filter-controls').disabled = false;
+    paintList();
+    updateButtons();
+    status(`${questions.length}문항을 편집할 수 있습니다.`);
+  } catch (error) { status(error.message, true); }
+}
+if (online) {
+  byId('build').hidden = true;
+  const form = byId('online-login'), key = byId('editor-key');
+  form.hidden = false;
+  status('편집 키를 입력하세요.');
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const submit = form.querySelector('button');
+    submit.disabled = true;
+    try {
+      await online.unlock(key.value);
+      key.value = '';
+      await loadQuestions();
+      form.hidden = loaded;
+    } catch (error) { status(error.message, true); }
+    finally { submit.disabled = false; }
+  };
+} else void loadQuestions();
+</script>
+</body>
+</html>
