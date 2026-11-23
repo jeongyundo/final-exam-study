@@ -627,7 +627,7 @@ async function open(options){
  if(!session){
   session=await new Promise(resolve=>{
    app.replaceChildren();const card=node('section','student-login');card.append(node('small','student-login-eyebrow','단원별 학습'),node('h1','','학생 로그인'),node('p','','이름을 입력하면 이 기기의 학습 기록을 연결하고 이어서 공부할 수 있어요.'));
-   const form=node('form'),label=node('label','','학생 이름'),input=node('input');input.id='student-name';input.name='studentName';input.autocomplete='name';input.placeholder='예: 이지우';input.required=true;label.htmlFor=input.id;
+   const form=node('form'),label=node('label','','학생 이름'),input=node('input');input.id='student-name';input.name='studentName';input.autocomplete='name';input.placeholder='이름';input.required=true;label.htmlFor=input.id;
    const error=node('p','student-login-error');error.id='student-login-error';error.setAttribute('role','alert');
    const button=node('button','act primary','로그인');button.type='submit';form.append(label,input,error,button);card.appendChild(form);app.appendChild(card);
    form.onsubmit=e=>{e.preventDefault();if(adminName(input.value)){button.disabled=true;global.sessionStorage.setItem('homework_teacher_entry_v1','1');const destination=new URL(location.href);if(location.protocol==='file:'){destination.searchParams.set('teacher','1');destination.searchParams.delete('admin');}else{destination.pathname=destination.pathname.replace(/[^/]*$/,'teacher.html');destination.search='';}location.assign(destination.href);return;}const profile=profileForName(input.value);if(!profile){error.textContent='등록된 학생 이름을 확인해 주세요.';return;}button.disabled=true;if(!profile.isTest)raw.removeItem('homework_teacher_view_session_v1');const data={...profile,signedAt:Date.now(),token:'',expiresAt:0};raw.setItem(SESSION,JSON.stringify(data));resolve(data);};
@@ -3120,6 +3120,7 @@ function timeHelp(q,evidence=false){
  const add=(label,id,action)=>{const b=el('button','act primary',label);b.type='button';b.id=id;b.onclick=action;actions.appendChild(b);return b;};
  if($('#use-time'))$('#use-time').disabled=state.time<1;if(state.time>0)add('⏳ 30초 더 풀기 · 연장권 1장','expiry-extend',()=>$('#use-time').click());
  else card.appendChild(el('p','expiry-empty','사용할 연장권이 없어요.'));
+ const hintButton=$('#use-hint');if(state.time>0&&hintButton&&!hintButton.disabled&&!q._hintUsed&&(run.retry||state.hints>0))add('⏳💡 30초 연장 + 힌트 같이 쓰기','expiry-extend-hint',()=>{$('#use-time').click();hintButton.click();});
  if(state.chests>0)add('🎁 상자 열고 아이템 받기','expiry-open-chest',()=>{const prize=game.open();if(prize){closeTimeDecision();$('#use-time').disabled=game.state().time<1;refreshWallet();timeHelp(q,evidence);$('#time-expired-title').after(el('p','journey-earned',prize.label+' 획득!'));}});
  const show=add(evidence?'근거 해설 보기':'정답과 해설 보기','expiry-reveal',()=>{q._timeDecision=null;closeTimeDecision();if(evidence)completeEvidence(q,null);else submit('questionTimeout');});show.className='act ghost';card.appendChild(actions);overlay.appendChild(card);document.body.appendChild(overlay);const app=document.getElementById('app');if(app)app.inert=true;refreshWallet();(actions.querySelector('button')||show).focus();
 }

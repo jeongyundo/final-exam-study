@@ -488,6 +488,7 @@ function timeHelp(q,evidence=false){
  const add=(label,id,action)=>{const b=el('button','act primary',label);b.type='button';b.id=id;b.onclick=action;actions.appendChild(b);return b;};
  if($('#use-time'))$('#use-time').disabled=state.time<1;if(state.time>0)add('⏳ 30초 더 풀기 · 연장권 1장','expiry-extend',()=>$('#use-time').click());
  else card.appendChild(el('p','expiry-empty','사용할 연장권이 없어요.'));
+ const hintButton=$('#use-hint');if(state.time>0&&hintButton&&!hintButton.disabled&&!q._hintUsed&&(run.retry||state.hints>0))add('⏳💡 30초 연장 + 힌트 같이 쓰기','expiry-extend-hint',()=>{$('#use-time').click();hintButton.click();});
  if(state.chests>0)add('🎁 상자 열고 아이템 받기','expiry-open-chest',()=>{const prize=game.open();if(prize){closeTimeDecision();$('#use-time').disabled=game.state().time<1;refreshWallet();timeHelp(q,evidence);$('#time-expired-title').after(el('p','journey-earned',prize.label+' 획득!'));}});
  const show=add(evidence?'근거 해설 보기':'정답과 해설 보기','expiry-reveal',()=>{q._timeDecision=null;closeTimeDecision();if(evidence)completeEvidence(q,null);else submit('questionTimeout');});show.className='act ghost';card.appendChild(actions);overlay.appendChild(card);document.body.appendChild(overlay);const app=document.getElementById('app');if(app)app.inert=true;refreshWallet();(actions.querySelector('button')||show).focus();
 }
