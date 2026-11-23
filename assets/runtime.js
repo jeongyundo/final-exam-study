@@ -2132,28 +2132,6 @@ global.HomeworkLearningPath={steps,order,build,knowledge,isHardSet};
 })(typeof window==='undefined'?globalThis:window);
 
 ;
-/* Separate reading practice records from graded OX attempts. */
-(function(global){
-  'use strict';
-  const keys=['locate','meaning','role','bridge','check'];
-  const labels=['표현 짚기','뜻 고르기','대상 구별','관계 연결','원문 확인'];
-  function sanitize(raw){
-    if(!raw||raw.version!==1||!Number.isInteger(raw.stage)||raw.stage<0||raw.stage>6||!raw.records||typeof raw.records!=='object')return null;
-    const state={version:1,stage:raw.stage,model:Number.isInteger(raw.model)?Math.max(0,Math.min(3,raw.model)):0,records:{},orders:{},finished:false};
-    for(const key of keys){
-      const r=raw.records[key];if(!r)continue;
-      if(typeof r.done!=='boolean'||typeof r.assisted!=='boolean')return null;
-      state.records[key]={done:r.done,assisted:r.assisted,attempts:Number.isInteger(r.attempts)?Math.max(0,Math.min(10000,r.attempts)):0,showHelp:!!r.showHelp,selected:Number.isInteger(r.selected)&&r.selected>=0&&r.selected<=2?r.selected:null};
-      const order=raw.orders?.[key];if(Array.isArray(order)&&order.length===2&&new Set(order).size===2&&order.every(x=>x===0||x===1))state.orders[key]=order.slice();
-    }
-    state.finished=complete(state);return state;
-  }
-  function complete(state){return !!state&&state.stage===6&&keys.every(k=>state.records?.[k]?.done===true);}
-  function summary(state){return keys.map((key,i)=>{const r=state?.records?.[key];return labels[i]+': '+(r?.done?(r.assisted?'도움받아 수행':'도움 없이 수행'):r?.assisted?'다시 연습 중':'아직 안 함');}).join(' · ');}
-  global.HomeworkReadingGuide={sanitize,complete,summary};
-})(typeof window==='undefined'?globalThis:window);
-
-;
 /*
  * HomeworkStudySession: a local study-session controller, independent of quiz timers.
  * create({window, document, storage, key, testMode, now, onChange, onAlert, onComplete, onRecord})
@@ -2684,8 +2662,6 @@ const guidedActive=()=>!!options.guidedLearning&&!manualSelection;
 const setsById=new Map(SETS.map(set=>[set.id,set]));
 const setLoads=new Map();
 let selectionTicket=0,prefetchTicket=0;
-const readingTemplatePromises=new Map();let readingObjectUrl=null,readingMessageHandler=null;
-function clearReadingFrame(){if(readingMessageHandler){global.removeEventListener("message",readingMessageHandler);readingMessageHandler=null;}if(readingObjectUrl){URL.revokeObjectURL(readingObjectUrl);readingObjectUrl=null;}}
 function loadSet(set,background=false){
   if(!set.dataFile||set._loaded)return Promise.resolve(set);
   const apply=()=>{
@@ -2752,7 +2728,7 @@ const loadRetry = id => loadActiveRun(id,true);
 function saveRun(idx){
   if(!run||run.finished)return;
   const q=run.list[run.idx];
-  const activeQuestion=run.readingRef?{...(run.resumeQuestion||{}),id:q.id,readingRef:run.readingRef,remainingMs:run.resumeQuestion?.remainingMs??null}:q&&(!q._submitted||q._evidencePhase)?{id:q.id||q.pi+':'+q.qno,
+  const activeQuestion=q&&(!q._submitted||q._evidencePhase)?{id:q.id||q.pi+':'+q.qno,
     editorRevision:q.editorRevision,
     remainingMs:run.deadline==null?run.questionRemainingMs:Math.max(0,run.deadline-Date.now()),
     extraSeconds:run.extraSeconds||0,solveLimitSeconds:run.questionLimitSeconds||30,hintUsed:!!q._hintUsed,timeDecision:q._timeDecision||null,elapsedMs:(q._solveElapsedMs||0)+(run.qStart&&!q._evidencePhase&&!q._timeDecision?Math.max(0,Date.now()-run.qStart):0),choiceHelpUsed:!!q._choiceHelpUsed,eliminated:q._eliminated||[],evidence:q._evidencePhase?{...q._evidencePhase,remainingMs:run.deadline==null?q._evidencePhase.remainingMs:Math.max(0,run.deadline-Date.now())}:null}:null;
@@ -2920,8 +2896,7 @@ function paintHomeworkProgress(state=studySession?.snapshot(),today){
  if(active&&pilotActive&&pilot?.state()){const s=pilot.state();const k=s.content.skills[s.index];lines.push(s.mode==='combined'?(s.content.label||'1~3문단')+' 핵심 연결':'질문 학습 · '+(k.place||k.paragraph+'문단'));}
  if(active&&run&&$('#scr-q').classList.contains('on')){
   const q=run.list[run.idx],labels=[...new Set((q?.evidence?.sources||[]).map(source=>source.label).filter(label=>/^\d+문단$/.test(label)))];
-  if(run.readingRef)lines.push('지금 읽는 문단 · '+Number(run.readingRef.slice(1))+'문단');
-  else if(labels.length)lines.push((run.retry?'복습 중':q.type==='ox'?'지금 OX':'지금 푸는 문단')+' · '+labels.join(' · '));
+  if(labels.length)lines.push((run.retry?'복습 중':q.type==='ox'?'지금 OX':'지금 푸는 문단')+' · '+labels.join(' · '));
  }else if(active&&run&&$('#scr-end').classList.contains('on')&&!run.retry){
   const paragraph=global.HomeworkDaily?.paragraphLabel(run.set.id);
   if(paragraph&&today?.paragraphs.includes(run.set.id))lines.push(paragraph.number+'문단 OX 완료');
@@ -2949,7 +2924,7 @@ function pauseStudyQuiz(){
 }
 function resumeStudyQuiz(){
  const state=studyQuizPause;studyQuizPause=null;if(!state||run!==state.run||run.list[run.idx]!==state.q||!$('#scr-q').classList.contains('on'))return;
- if(state.timer){if(state.q._evidencePhase)startEvidenceTimer(state.q);else if(!state.q._submitted&&!run.readingRef)startQuestionTimer(state.q);}
+ if(state.timer){if(state.q._evidencePhase)startEvidenceTimer(state.q);else if(!state.q._submitted)startQuestionTimer(state.q);}
  const pause=$('#q-review-pause');if(state.auto&&pause?.getAttribute('aria-pressed')==='true')pause.click();
 }
 function saveStudyAndHome(){
@@ -3275,7 +3250,7 @@ async function loadCloudHistory(){
 }
 
 /* ---- 시작 화면 ---- */
-function show(id){ if(pilotActive){pilotView?.destroy();pilotView=null;pilotActive=false;document.body.classList.remove('socratic-active');}closeTimeDecision();clearAutoNext();resetAnswerDock();document.getElementById('time-help')?.remove();clearReadingFrame();document.body.classList.remove('reading-prep','quick-comparison');clearTimeSignal();++prefetchTicket;clearAutoNext();effect.classList.remove('playing');clearTimeout(hitTimer);document.body.classList.remove('split-question');document.body.classList.toggle('units-home',!!options.units&&id==='#scr-start');document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $(id).classList.add('on'); paintHomeworkProgress(); window.scrollTo(0,0); }
+function show(id){ if(pilotActive){pilotView?.destroy();pilotView=null;pilotActive=false;document.body.classList.remove('socratic-active');}closeTimeDecision();clearAutoNext();resetAnswerDock();document.getElementById('time-help')?.remove();document.body.classList.remove('quick-comparison');clearTimeSignal();++prefetchTicket;clearAutoNext();effect.classList.remove('playing');clearTimeout(hitTimer);document.body.classList.remove('split-question');document.body.classList.toggle('units-home',!!options.units&&id==='#scr-start');document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on')); $(id).classList.add('on'); paintHomeworkProgress(); window.scrollTo(0,0); }
 function renderStart(){
   renderAdventure();
   homeGameState=game.state();
@@ -3642,7 +3617,7 @@ function start(set, saved, retry, questionRecords){
     localStorage.setItem(attemptsKey(set.id), attempt);
     session = Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   }
-  run = {set, attempt, session, list, idx, startedAt, logs, studiedRefs:new Set(saved?.studiedRefs||[]),readingStates:saved?.readingStates||{},readingRef:null,qStart:null, timerId:null, retry:!!retry,
+  run = {set, attempt, session, list, idx, startedAt, logs, studiedRefs:new Set(saved?.studiedRefs||[]),readingStates:saved?.readingStates||{},qStart:null, timerId:null, retry:!!retry,
     resumeQuestion:saved?.activeQuestion||null, extraSeconds:saved?.activeQuestion?.extraSeconds||0,
     totalRemainingMs:null, totalStartedAt:null, totalTimedOut:false, questionStartedAt:null, questionRemainingMs:saved?.activeQuestion?.remainingMs??30000};
   show('#scr-q');
@@ -3659,57 +3634,6 @@ function focusIndex(q, sentences){
   const best=Math.max(...scores);
   return best>0 ? scores.indexOf(best) : (sentences.length===1?0:-1);
 }
-function loadReadingTemplate(){
-  const unit=run.set.unitId,file=options.readingTemplates?.[unit]||options.readingTemplateFile;
-  const cached=()=>global.HOMEWORK_READING_TEMPLATES?.[unit]||(unit==='2-2'?global.HOMEWORK_READING_TEMPLATE:null);
-  if(cached())return Promise.resolve(cached());
-  if(readingTemplatePromises.has(unit))return readingTemplatePromises.get(unit);
-  const promise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=file;script.onload=()=>{if(cached())resolve(cached());else{readingTemplatePromises.delete(unit);reject(Error('empty'));}};script.onerror=()=>{readingTemplatePromises.delete(unit);script.remove();reject(Error('reading unavailable'));};document.head.appendChild(script);});readingTemplatePromises.set(unit,promise);return promise;
-}
-function showReadingLesson(q,ref){
-  const currentRun=run,unit=run.set.unitId,paragraph=Number(ref.slice(1)),guide=global.HomeworkReadingGuide;
-  const readingKey=PREFIX+'reading-guide-v1-'+unit+'-'+ref;
-  run.readingStates=run.readingStates||{};
-  if(!run.readingStates[ref]){try{const saved=guide.sanitize(JSON.parse(localStorage.getItem(readingKey)||'null'));if(saved)run.readingStates[ref]=saved;}catch(_){}}
-  run.readingRef=ref;paintHomeworkProgress();clearInterval(run.timerId);run.timerId=null;run.deadline=null;clearAutoNext();clearTimeSignal();
-  document.body.classList.add('reading-prep');$('#q-timer').hidden=true;$('#q-timer').style.visibility='hidden';helpPanel.hidden=true;
-  $('#q-check').style.display='none';$('#q-next').style.display='none';$('#q-fb').replaceChildren();$('#q-part').textContent=paragraph+'문단 · 차근차근 읽기';$('#q-cnt').textContent='한 문단씩, 질문 하나씩 연습해요';$('#q-prog').style.width=(run.idx/run.list.length*100)+'%';
-  const panel=el('section','reading-lesson');panel.id='reading-lesson';panel.dataset.readingRef=ref;
-  panel.append(el('h2','',paragraph+'문단 먼저 읽기'),el('p','reading-lesson-note','설명을 먼저 보고, 짚기와 고르기부터 해 봐요. 이 연습에는 문항별 시간 제한과 힌트권 사용이 없어요.'));
-  const state=el('p','reading-lesson-state','문단 연습을 불러오는 중…'),frame=el('iframe','reading-lesson-frame');frame.id='reading-lesson-frame';frame.title=paragraph+'문단 웹 인터랙티브';frame.setAttribute('sandbox','allow-scripts');panel.append(state,frame);
-  const record=el('p','reading-lesson-record');record.setAttribute('aria-live','polite');panel.appendChild(record);
-  const startButton=el('button','act primary','문단 연습을 마치면 문제로 이동해요');startButton.id='lesson-start';startButton.type='button';startButton.disabled=true;panel.appendChild(startButton);$('#q-body').replaceChildren(panel);saveRun(run.idx);
-  let fallback=false;
-  startButton.onclick=()=>{if(run!==currentRun||(!fallback&&!guide.complete(run.readingStates[ref])))return;run.studiedRefs.add(ref);run.readingRef=null;renderQ();saveRun(run.idx);};
-  readingMessageHandler=event=>{
-    const msg=event.data;
-    if(run!==currentRun||!frame.isConnected||event.source!==frame.contentWindow||!msg||msg.unit!==unit||msg.paragraph!==paragraph||msg.version!==1)return;
-    if(msg.type==='homework-study-activity'){studySession?.activity();return;}
-    if(msg.type==='homework-study-choice'){logStudentEvent('reading-choice',msg.label,msg.control);return;}
-    if(msg.type==='guided-reading-ready'){
-      frame.contentWindow.postMessage({type:'guided-reading-init',unit,paragraph,state:run.readingStates[ref]||null},'*');return;
-    }
-    if(!['guided-reading-progress','guided-reading-complete','guided-reading-finish'].includes(msg.type))return;
-    const saved=guide.sanitize(msg.state);if(!saved)return;
-    run.readingStates[ref]=saved;localStorage.setItem(readingKey,JSON.stringify(saved));saveRun(run.idx);
-    const completed=guide.complete(saved);startButton.disabled=!completed;startButton.textContent=completed?'원문 문제로 확인하기':'문단 연습을 마치면 문제로 이동해요';
-    state.textContent=completed?'이 문단의 연습을 마쳤어요. 이제 원문 문제로 확인해요.':'모르면 ‘한 번 보여 주세요’를 눌러 함께 연습해요.';
-    record.textContent=guide.summary(saved);
-    if(msg.type==='guided-reading-finish'&&completed)startButton.click();
-  };
-  global.addEventListener('message',readingMessageHandler);
-  loadReadingTemplate().then(template=>{
-    if(run!==currentRun||!frame.isConnected)return;
-    const activityScript='<script>(function(){let last=0;function active(e){if(!e.isTrusted||Date.now()-last<500)return;last=Date.now();parent.postMessage({type:"homework-study-activity",unit:'+JSON.stringify(unit)+',paragraph:'+paragraph+',version:1},"*");}for(const name of ["pointermove","pointerdown","keydown","scroll","touchstart"])document.addEventListener(name,active,{capture:true,passive:true});document.addEventListener("click",function(e){if(!e.isTrusted)return;const t=e.target.closest("button,a,summary,[role=button],input[type=radio],input[type=checkbox]");if(t)parent.postMessage({type:"homework-study-choice",unit:'+JSON.stringify(unit)+',paragraph:'+paragraph+',version:1,label:(t.getAttribute("aria-label")||t.textContent||t.value||"").slice(0,1000),control:t.id||""},"*");},true);})();</script>';
-    const html=template.replace('__HOMEWORK_PARAGRAPH__',String(paragraph-1)).replace('</body>',activityScript+'</body>');
-    frame.onload=()=>{if(run!==currentRun)return;state.textContent='한 단계씩 읽고 선택해 보세요. 도움은 언제든 볼 수 있어요.';};frame.srcdoc=html;
-  }).catch(()=>{
-    if(run!==currentRun)return;state.textContent='문단 연습을 불러오지 못했어요. 원문을 읽고 문제로 이동하거나 새로고침할 수 있어요.';frame.remove();
-    const text=el('div','reading-lesson-fallback');for(const s of q.evidence.sources[0].sentences)text.appendChild(el('p','',s.text||s.t||''));panel.insertBefore(text,startButton);
-    fallback=true;startButton.disabled=false;startButton.textContent='원문을 읽고 문제로 이동';
-  });
-}
-
 function arrangeShortComparison(q,body){
   if(!q.shortComparison)return;document.body.classList.add('quick-comparison');
   const grid=el('div','quick-comparison-grid'),left=el('section','quick-source'),right=el('section','quick-information');right.appendChild(el('strong','quick-label',q.progressiveComparison?q.progressiveStep+'/5단계 · '+q.progressiveLabel:'비교할 정보'));if(q.synthesis)right.classList.add('synthesis-question');left.setAttribute('aria-label','핵심 문장 또는 지문');left.tabIndex=0;
@@ -3719,14 +3643,12 @@ function arrangeShortComparison(q,body){
 function renderQ(){
   paintHomeworkProgress();
   closeTimeDecision();clearAutoNext();resetAnswerDock();
-  clearReadingFrame();document.body.classList.remove('split-question','evidence-stage','evidence-reviewed','reading-prep','quick-comparison');
+  document.body.classList.remove('split-question','evidence-stage','evidence-reviewed','quick-comparison');
   paintGuidedStatus();
   clearTimeSignal();
   clearAutoNext();
   const q = run.list[run.idx];
   clearInterval(run.timerId); run.deadline=null;
-  const readingRef=q.evidence?.sources?.[0]?.id;
-  if(!run.retry&&!run.set.isVocabularyPractice&&(options.readingTemplates?.[run.set.unitId]||options.readingTemplateFile)&&/^[LR]\d{2}$/.test(readingRef)&&!run.studiedRefs.has(readingRef)){showReadingLesson(q,readingRef);return;}
   $('#q-timer').className='timer';
   const restored=run.resumeQuestion?.id===(q.id||q.pi+':'+q.qno)&&run.resumeQuestion.editorRevision===q.editorRevision?run.resumeQuestion:null;
   run.resumeQuestion=null;
