@@ -2,37 +2,39 @@
 var HomeworkSocratic = (function(){
 'use strict';
 const suffix='socratic_v1_unit22-p01-03',eventSuffix='socratic_event_v1_';
+// Each course keeps its own saved state. The 1~3 course keeps its original key.
+const suffixFor=content=>content?.id?'socratic_v1_'+content.id:suffix;
 const covers=['unit22-l01-quick-basic','unit22-l02-quick-basic','unit22-l03-quick-basic','unit22-intro-p01-03-basic'];
 const clone=v=>JSON.parse(JSON.stringify(v)),parse=v=>{try{return JSON.parse(v||'null');}catch(_){return null;}};
 const day=t=>new Date(t+9*3600000).toISOString().slice(0,10);
 const norm=s=>String(s).normalize('NFC').replace(/[\s.!?。]/g,'');
-function read(storage,prefix){const s=parse(storage.getItem(prefix+suffix));return s?.schema===1&&s.content?.skills?.length?s:null;}
+function read(storage,prefix,content){const s=parse(storage.getItem(prefix+suffixFor(content)));return s?.schema===1&&s.content?.skills?.length?s:null;}
 function level(r){if(!r||!r.first)return null;if(r.recallCorrect&&r.independent)return 4;if(r.solved)return 3;if(r.help)return 2;return 1;}
 function summary(s,now=Date.now()){
  if(!s)return {started:false,pending:[],combinedPending:[],pendingCount:0,due:[],paragraphs:[],skills:[],complete:false};
  const skills=s.content.skills.map(k=>({id:k.id,title:k.title,paragraph:k.paragraph,...s.results[k.id],level:level(s.results[k.id])}));
  const pending=skills.filter(r=>r.pending).map(r=>r.id),due=skills.filter(r=>r.solved&&!r.recallCorrect&&!r.teacherPending&&r.dueAt<=now&&r.lastRecallDay!==day(now)).map(r=>r.id);
- const paragraphs=[1,2,3].filter(p=>skills.filter(k=>k.paragraph===p).every(k=>k.solved&&!k.pending));
+ const all=[...new Set(skills.map(k=>k.paragraph))],paragraphs=all.filter(p=>skills.filter(k=>k.paragraph===p).every(k=>k.solved&&!k.pending));
  const combinedPending=s.combined.map((x,i)=>x.pending?i:null).filter(i=>i!==null);
- return {started:true,pending,combinedPending,pendingCount:pending.length+combinedPending.length,due,paragraphs,skills,complete:paragraphs.length===3&&s.combined.every(x=>x.correct&&!x.pending),initialCorrect:skills.filter(k=>k.first==='correct'&&!k.reasonWrong).length,wrong:skills.filter(k=>k.first==='wrong').length,unknown:skills.filter(k=>k.first==='unknown').length,assisted:skills.filter(k=>k.help||k.reasonWrong).length,mastered:skills.filter(k=>k.level===4).length};
+ return {started:true,pending,combinedPending,pendingCount:pending.length+combinedPending.length,due,paragraphs,skills,totalParagraphs:all.length,complete:paragraphs.length===all.length&&s.combined.every(x=>x.correct&&!x.pending),initialCorrect:skills.filter(k=>k.first==='correct'&&!k.reasonWrong).length,wrong:skills.filter(k=>k.first==='wrong').length,unknown:skills.filter(k=>k.first==='unknown').length,assisted:skills.filter(k=>k.help||k.reasonWrong).length,mastered:skills.filter(k=>k.level===4).length};
 }
 // Question tutoring never awards completion for the separate OX sets.
 function overlay(state){return state;}
-function shouldStart(s,setId){return !!(s&&s.screen!=='summary')||(!summary(s).complete&&covers.includes(setId));}
+function shouldStart(s,setId,content){return !!(s&&s.screen!=='summary')||(!summary(s).complete&&(content?.covers||covers).includes(setId));}
 function create({storage,prefix,content,now=Date.now,onChange=()=>{},onParagraph=()=>{}}){
- let state=read(storage,prefix),saveError=null;
+ const key=suffixFor(content);let state=read(storage,prefix,content),saveError=null;
  function persist(next,event){
   const eventId=globalThis.crypto?.randomUUID?.()||now().toString(36)+'_'+Math.random().toString(36).slice(2);
   next.updatedAt=now();next.sequence=(state?.sequence||0)+1;
   const record={...event,id:eventId,at:now(),course:content.id,version:next.content.version,sequence:next.sequence};
   // Save the resume state first. A storage failure never advances the visible question.
-  try{storage.setItem(prefix+suffix,JSON.stringify(next));saveError=null;}catch(e){saveError='저장 공간을 확인해 주세요. 현재 질문을 유지했어요.';onChange(state,saveError);return false;}
+  try{storage.setItem(prefix+key,JSON.stringify(next));saveError=null;}catch(e){saveError='저장 공간을 확인해 주세요. 현재 질문을 유지했어요.';onChange(state,saveError);return false;}
   state=next;
   try{storage.setItem(prefix+eventSuffix+eventId,JSON.stringify(record));}catch(e){saveError='진행은 저장했지만 상세 로그를 저장하지 못했어요.';}
-  for(const p of summary(state,now()).paragraphs)if(!state.countedParagraphs.includes(p)){onParagraph(p);state.countedParagraphs.push(p);storage.setItem(prefix+suffix,JSON.stringify(state));}
+  for(const p of summary(state,now()).paragraphs)if(!state.countedParagraphs.includes(p)){onParagraph(p);state.countedParagraphs.push(p);storage.setItem(prefix+key,JSON.stringify(state));}
   onChange(state,saveError);return true;
  }
- function start(){state=read(storage,prefix)||state;if(state){onChange(state);return;}const next={schema:1,content:clone(content),createdAt:now(),updatedAt:now(),screen:'welcome',mode:'learn',index:0,node:'main',diagnostic:[],results:{},combined:content.combined.map(()=>({correct:false})),countedParagraphs:[],queue:[],queueIndex:0,helpThisRound:false};for(const k of content.skills)next.results[k.id]={first:null,help:false,reasonWrong:false,solved:false,pending:false,independent:false,recallCorrect:false};persist(next,{kind:'start'});}
+ function start(){state=read(storage,prefix,content)||state;if(state){onChange(state);return;}const next={schema:1,content:clone(content),createdAt:now(),updatedAt:now(),screen:'welcome',mode:'learn',index:0,node:'main',diagnostic:[],results:{},combined:content.combined.map(()=>({correct:false})),countedParagraphs:[],queue:[],queueIndex:0,helpThisRound:false};for(const k of content.skills)next.results[k.id]={first:null,help:false,reasonWrong:false,solved:false,pending:false,independent:false,recallCorrect:false};persist(next,{kind:'start'});}
  const skill=(s=state)=>s.content.skills[s.index];
  function question(s=state){const k=skill(s);if(s.screen==='diagnostic'){
   const id=s.content.diagnostic[s.diagnostic.length],base=s.content.skills.find(k=>k.id===id).main;
@@ -92,7 +94,7 @@ function create({storage,prefix,content,now=Date.now,onChange=()=>{},onParagraph
    if(s.mode==='recall'||s.mode==='review')advanceQueue(s);
    else if(s.mode==='combined'){s.index=s.combinedReview?(before.combinedPending.find(i=>i>s.index)??s.content.combined.length):s.index+1;s.helpThisRound=false;if(s.index>=s.content.combined.length){s.screen='summary';s.mode='learn';s.index=0;}else{s.screen='question';s.node='main';s.notice='';}}
    else if(s.index<s.content.skills.length-1){const p=k.paragraph;beginSkill(s,s.index+1,s.content.skills[s.index+1].paragraph!==p);}
-   else{s.mode='combined';s.combinedReview=false;s.helpThisRound=false;s.index=0;s.node='main';s.screen='question';s.notice='1~3문단의 핵심을 두 질문으로 연결해 봐요.';}
+   else{s.mode='combined';s.combinedReview=false;s.helpThisRound=false;s.index=0;s.node='main';s.screen='question';s.notice=(s.content.label||'1~3문단')+'의 핵심을 두 질문으로 연결해 봐요.';}
   }
   else if(action.type==='review'&&s.screen==='summary'&&before.pending.length){s.mode='review';s.queue=before.pending;s.queueIndex=-1;advanceQueue(s);}
   else if(action.type==='review'&&s.screen==='summary'&&before.combinedPending.length){s.mode='combined';s.combinedReview=true;s.helpThisRound=false;s.index=before.combinedPending[0];s.node='main';s.screen='question';s.notice='핵심 연결 복습 · 새 상황으로 다시 확인해요.';}
@@ -101,7 +103,7 @@ function create({storage,prefix,content,now=Date.now,onChange=()=>{},onParagraph
   if(action.type==='answer'){const asked=question(state);event.prompt=asked.prompt;if(state.screen==='diagnostic'&&asked.context){event.context=clone(asked.context);event.diagnosticRevision=asked.diagnosticRevision;}event.selectedText=state.node==='evidence'&&action.value!=='?'?asked.groups[action.value].map(id=>Object.values(state.content.sources).flatMap(p=>p.sentences).find(x=>x.id===id)?.text||'').join(' '):String(action.value);}
   persist(s,event);
  }
- return {start,act,question,state:()=>state,summary:()=>summary(state,now()),error:()=>saveError};
+ return {start,act,question,content,key,state:()=>state,summary:()=>summary(state,now()),error:()=>saveError};
 }
-return {create,read,summary,overlay,shouldStart,covers,suffix,eventSuffix,level};
+return {create,read,summary,overlay,shouldStart,covers,suffix,suffixFor,eventSuffix,level};
 })();

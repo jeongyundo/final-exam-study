@@ -158,20 +158,27 @@ function showAnswerDock(){answerDock.hidden=false;document.body.classList.add('a
 let audioContext=null,hitTimer=null,autoNextTimer=null,cancelAutoNext=null;
 let studySession=null,studyQuizPause=null,studyDialog=null,pendingStudyAction=null,studyReturnNoticeUntil=0;
 const daily=options.guidedLearning&&!untimed&&global.HomeworkDaily?.create({storage:localStorage,prefix:PREFIX,planFor:date=>options.dailyPlans?.planFor(date)});
-const pilot=options.guidedLearning&&global.HomeworkSocratic?.create({storage:localStorage,prefix:PREFIX,content:global.HomeworkSocraticContent,onParagraph:p=>{
- const state=studySession?.snapshot();if(state?.active&&state.mode==='homework'&&daily){const today=daily.finishParagraph({id:'unit22-l0'+p+'-quick-basic',isQuickPractice:true});checkDailyFinish(today,state);paintHomeworkProgress(state,today);}
-}});
-function startPilot(recall=false){
- if(!pilot)return;manualSelection=false;if(run){clearInterval(run.timerId);pauseQuestionClock();saveRun();}run=null;
+const socratic=global.HomeworkSocratic,socraticCourses=options.guidedLearning&&socratic?(global.HomeworkSocraticCourses||[global.HomeworkSocraticContent]).filter(Boolean):[];
+const pilots=socraticCourses.map(content=>socratic.create({storage:localStorage,prefix:PREFIX,content,onParagraph:p=>{
+ if(!(p>0))return;// concept and application skills are not textbook paragraphs
+ const state=studySession?.snapshot();if(state?.active&&state.mode==='homework'&&daily){const today=daily.finishParagraph({id:'unit22-l'+String(p).padStart(2,'0')+'-quick-basic',isQuickPractice:true});checkDailyFinish(today,state);paintHomeworkProgress(state,today);}
+}}));
+let pilot=pilots[0]||null;
+const pilotState=m=>socratic.read(localStorage,PREFIX,m.content);
+// A course already in progress comes first; otherwise the course whose paragraphs the path reaches next.
+function pilotFor(setId){return pilots.find(m=>{const s=pilotState(m);return s&&s.screen!=='summary';})||pilots.find(m=>socratic.shouldStart(pilotState(m),setId,m.content))||null;}
+function duePilot(){return pilots.find(m=>socratic.summary(pilotState(m)).due.length)||null;}
+function startPilot(recall=false,model=pilot){
+ if(!model)return;pilot=model;manualSelection=false;if(run){clearInterval(run.timerId);pauseQuestionClock();saveRun();}run=null;
  show('#scr-q');pilotActive=true;document.body.classList.add('socratic-active');guidedStatus.hidden=true;$('#q-fb').replaceChildren();
  pilotView=global.HomeworkSocraticView.mount({root:$('#q-body'),model:pilot,onHome:saveStudyAndHome,onContinue:()=>{saveStudyAndHome();continueStudy(startGuided);}});
  pilot.start();if(recall&&pilot.state()?.screen==='summary')pilot.act({type:'recall'});pilotView.render();paintHomeworkProgress();
 }
-function renderPilotHome(home){
- if(!pilot)return;const s=global.HomeworkSocratic.read(localStorage,PREFIX),m=global.HomeworkSocratic.summary(s),card=el('section','guided-next socratic-home-card');card.id='socratic-home-card';
- card.append(el('small','','새 학습 · 2-2단원 1~3문단'),el('h3','','질문하며 읽기'),el('p','',m.started?'복습까지 확인한 문단 '+m.paragraphs.length+'/3 · 남은 복습 '+m.pendingCount+' · 나중에 기억 확인 '+m.mastered+'/7 · 새 과정 첫 정답 '+m.initialCorrect+'/7':'한 가지씩 묻고, 막히면 더 작은 질문으로 도와줘요. 질문 학습 뒤에는 본문 OX를 따로 풀어요.'));
- const row=el('div','intro-practice-actions');const b=el('button','act primary',m.started?'질문 학습 이어 하기':'질문 학습 시작하기');b.id='socratic-launch';b.onclick=()=>continueStudy(()=>startPilot());row.append(b);
- if(m.due.length){const recall=el('button','act ghost','기억 확인 '+m.due.length+'개');recall.onclick=()=>continueStudy(()=>startPilot(true));row.append(recall);}card.append(row);home.append(card);
+function renderPilotHome(home,next){
+ const course=pilotFor(next?.set.id)||duePilot()||pilots[0];if(!course)return;const s=pilotState(course),m=socratic.summary(s),total=course.content.skills.length,card=el('section','guided-next socratic-home-card');card.id='socratic-home-card';
+ card.append(el('small','','새 학습 · 2-2단원 '+(course.content.label||'1~3문단')),el('h3','','질문하며 읽기'),el('p','',m.started?'복습까지 확인한 문단 '+m.paragraphs.length+'/'+m.totalParagraphs+' · 남은 복습 '+m.pendingCount+' · 나중에 기억 확인 '+m.mastered+'/'+total+' · 새 과정 첫 정답 '+m.initialCorrect+'/'+total:'한 가지씩 묻고, 막히면 더 작은 질문으로 도와줘요. 질문 학습 뒤에는 본문 OX를 따로 풀어요.'));
+ const row=el('div','intro-practice-actions');const b=el('button','act primary',m.started?'질문 학습 이어 하기':'질문 학습 시작하기');b.id='socratic-launch';b.onclick=()=>continueStudy(()=>startPilot(false,course));row.append(b);
+ if(m.due.length){const recall=el('button','act ghost','기억 확인 '+m.due.length+'개');recall.onclick=()=>continueStudy(()=>startPilot(true,course));row.append(recall);}card.append(row);home.append(card);
  const practiceCard=el('section','guided-next');practiceCard.id='intro-ox-practice';
  practiceCard.append(el('small','','2-2단원 · 1~3문단'),el('h3','','본문 OX · 어휘 연습'),el('p','','본문 OX는 질문 학습과 따로 기록해요. 풀던 문제와 오답은 이어서 풀 수 있어요.'));
  const buttons=el('div','intro-practice-actions');
@@ -236,7 +243,7 @@ function paintHomeworkProgress(state=studySession?.snapshot(),today){
  if(active&&today===undefined)today=daily?.snapshot();
  const lines=[];
  if(active&&today?.goal.paragraphs)lines.push('완료 문단 '+today.paragraphs.length+' / '+today.goal.paragraphs);
- if(active&&pilotActive&&pilot?.state()){const s=pilot.state();lines.push(s.mode==='combined'?'1~3문단 핵심 연결':'질문 학습 · '+s.content.skills[s.index].paragraph+'문단');}
+ if(active&&pilotActive&&pilot?.state()){const s=pilot.state();const k=s.content.skills[s.index];lines.push(s.mode==='combined'?(s.content.label||'1~3문단')+' 핵심 연결':'질문 학습 · '+(k.place||k.paragraph+'문단'));}
  if(active&&run&&$('#scr-q').classList.contains('on')){
   const q=run.list[run.idx],labels=[...new Set((q?.evidence?.sources||[]).map(source=>source.label).filter(label=>/^\d+문단$/.test(label)))];
   if(run.readingRef)lines.push('지금 읽는 문단 · '+Number(run.readingRef.slice(1))+'문단');
@@ -656,7 +663,7 @@ function renderStart(){
 }
 
 function learningState(){return global.HomeworkLearningPath.build({sets:SETS,units:options.units||[],storage:localStorage,prefix:PREFIX,page:options.page});}
-function startGuided(){const model=learningState(),target=model.next;const ps=global.HomeworkSocratic?.read(localStorage,PREFIX);if(pilot&&global.HomeworkSocratic.shouldStart(ps,target?.set.id)){startPilot();return;}if(pilot&&global.HomeworkSocratic.summary(ps).due.length){startPilot(true);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
+function startGuided(){const model=learningState(),target=model.next;const chosen=pilotFor(target?.set.id);if(chosen){startPilot(false,chosen);return;}const due=duePilot();if(due){startPilot(true,due);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
 function isHardSet(set){return !!set&&global.HomeworkLearningPath.isHardSet(set);}
 function startHard(unitId){
  const unit=learningState().steps.find(u=>u.id===unitId),target=unit?.hard?.next;
@@ -708,7 +715,7 @@ function renderGuidedHome(){
  const home=el('section','guided-home');home.id='guided-home';
  if(daily){const today=daily.snapshot(),card=el('section','guided-next');card.id='daily-homework-goal';card.append(el('h3','','오늘의 숙제 · '+today.date),el('p','',dailyText(today)));home.appendChild(card);}
  const ladder=el('ol','exam-ladder');model.steps.forEach((step,i)=>{const item=el('li','exam-step'+(step.id===current.id?' current':'')+(step.done?' done':''));item.dataset.examStep=step.id;if(step.id===current.id)item.setAttribute('aria-current','step');item.append(el('span','step-number',String(i+1)),el('strong','',step.id+'단원'),el('small','',step.done?'본문 클리어':step.ready?(step.id===current.id?'모험 중':'다음 월드'):'준비 중'));ladder.appendChild(item);});home.appendChild(ladder);
- renderPilotHome(home);
+ renderPilotHome(home,model.next);
  renderStageMap(model,home);
  const stats=el('div','journey-stats');
  const values=[['progress','이 단원 진행',percent(current.progress*100),'복습까지 확인한 내용'],['accuracy','연습 첫 정답률',current.practiceAccuracy==null?'—':percent(current.practiceAccuracy),current.practiceAccuracy==null?'첫 구간을 풀면 표시돼요':'실제 첫 풀이 기록 · 복습 점수 제외'],['estimate','학습 기준 예상',percent(current.expectedAccuracy),'단원 완주 목표 3/4 · 진행률 환산']];
@@ -718,7 +725,7 @@ function renderGuidedHome(){
  const cheer=el('p','journey-cheer',journeyCheer(model,current));cheer.setAttribute('role','status');home.appendChild(cheer);
  if(gains.length)home.appendChild(el('p','journey-earned','🎁 '+gains.join(' · ')));
  if(game.state().chests)chestControl(home);
- if(next){const card=el('section','guided-next'),chapter=journeyChapter(current,next.set);card.append(el('small','',next.kind==='review'?'깃발을 세우기 전 · 필수 복습':model.phase==='supplement'?'마지막 코스 · '+current.id+'단원 보충 자료':next.kind==='resume'?'풀던 구간부터 이어가요':'자동으로 정한 다음 구간'),el('h3','',global.HomeworkSocratic?.shouldStart(global.HomeworkSocratic.read(localStorage,PREFIX),next.set.id)?'1~3문단 · 질문하며 읽기':next.set.name.replace(/\s*10문제/,' 연습')),el('p','',model.phase==='supplement'?'본문 밖 개념을 따로 정리하는 시간이에요.':(chapter.index+1)+'챕터 · '+chapter.title));
+ if(next){const card=el('section','guided-next'),chapter=journeyChapter(current,next.set);card.append(el('small','',next.kind==='review'?'깃발을 세우기 전 · 필수 복습':model.phase==='supplement'?'마지막 코스 · '+current.id+'단원 보충 자료':next.kind==='resume'?'풀던 구간부터 이어가요':'자동으로 정한 다음 구간'),el('h3','',(course=>course?(course.content.label||'1~3문단')+' · 질문하며 읽기':next.set.name.replace(/\s*10문제/,' 연습'))(pilotFor(next.set.id))),el('p','',model.phase==='supplement'?'본문 밖 개념을 따로 정리하는 시간이에요.':(chapter.index+1)+'챕터 · '+chapter.title));
   const list=el('ul','guided-knowledge');global.HomeworkLearningPath.knowledge(next.set,next.kind).forEach(text=>list.appendChild(el('li','',text)));card.append(el('h4','','시작 전에 알아두기'),list);
   const actions=el('div','study-start-actions');actions.id='study-start-actions';
   const button=el('button','act primary','숙제로 시작하기');button.id='guided-start';button.type='button';button.onclick=()=>launchStudy('homework',startGuided);
