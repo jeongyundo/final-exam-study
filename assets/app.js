@@ -164,6 +164,7 @@ const pilots=socraticCourses.map(content=>socratic.create({storage:localStorage,
  const state=studySession?.snapshot();if(state?.active&&state.mode==='homework'&&daily){const today=daily.finishParagraph({id:'unit22-l'+String(p).padStart(2,'0')+'-quick-basic',isQuickPractice:true});checkDailyFinish(today,state);paintHomeworkProgress(state,today);}
 }}));
 let pilot=pilots[0]||null;
+if(pilots.length&&options.questionPatches)void options.questionPatches.refresh().then(records=>{socratic.applyEdits(socraticCourses,records);if(pilotActive)pilotView?.render();});
 const pilotState=m=>socratic.read(localStorage,PREFIX,m.content);
 // A course already in progress comes first; otherwise the course whose paragraphs the path reaches next.
 function pilotFor(setId){return pilots.find(m=>{const s=pilotState(m);return s&&s.screen!=='summary';})||pilots.find(m=>socratic.shouldStart(pilotState(m),setId,m.content))||null;}

@@ -18,6 +18,34 @@ function summary(s,now=Date.now()){
  const combinedPending=s.combined.map((x,i)=>x.pending?i:null).filter(i=>i!==null);
  return {started:true,pending,combinedPending,pendingCount:pending.length+combinedPending.length,due,paragraphs,skills,totalParagraphs:all.length,complete:paragraphs.length===all.length&&s.combined.every(x=>x.correct&&!x.pending),initialCorrect:skills.filter(k=>k.first==='correct'&&!k.reasonWrong).length,wrong:skills.filter(k=>k.first==='wrong').length,unknown:skills.filter(k=>k.first==='unknown').length,assisted:skills.filter(k=>k.help||k.reasonWrong).length,mastered:skills.filter(k=>k.level===4).length};
 }
+// Online ladder edits keep ids, evidence and sources; only wording, choices and answers change.
+const editKey=(course,key)=>'ladder:'+course.id+':'+key;
+function question_(q){return !!q&&typeof q.prompt==='string'&&q.prompt.trim()&&Array.isArray(q.options)&&q.options.length>=2&&q.options.length<=5&&q.options.every(o=>typeof o==='string'&&o.trim())&&new Set(q.options).size===q.options.length&&q.options.includes(q.answer);}
+function ladderItem(base,item){
+ if(!item||typeof item!=='object'||typeof item.why!=='string'||!item.why.trim())return null;
+ const pick=q=>({prompt:q.prompt.trim(),options:q.options.map(o=>o.trim()),answer:q.answer.trim()});
+ if(!Array.isArray(item.narrow)||item.narrow.length!==2||![...item.narrow,item.retest,item.review].every(question_))return null;
+ const next={...base,why:item.why.trim(),narrow:item.narrow.map(pick),retest:pick(item.retest),review:pick(item.review)};
+ if(base.main){
+  if(!question_(item.main)||typeof item.title!=='string'||!item.title.trim())return null;
+  const r=item.recall,list=v=>Array.isArray(v)&&v.length&&v.every(s=>typeof s==='string'&&s.trim());
+  if(!r||typeof r.prompt!=='string'||!r.prompt.trim()||!list(r.accept)||!list(r.reject))return null;
+  const accept=r.accept.map(norm);if(r.reject.some(s=>accept.includes(norm(s))))return null;
+  Object.assign(next,{title:item.title.trim(),main:pick(item.main),recall:{prompt:r.prompt.trim(),accept:r.accept.map(s=>s.trim()),reject:r.reject.map(s=>s.trim())}});
+ }else{if(!question_(item))return null;Object.assign(next,pick(item));}
+ return next;
+}
+function edited(base,record){
+ const edit=record?.edit;if(!edit||edit.answer!=='O'||edit.sourceVersion!==base.rev)return base;
+ try{return ladderItem(base,JSON.parse(edit.claim))||base;}catch(_){return base;}
+}
+const bases=new WeakMap();
+// Replaces course items in place so running tutors pick up the latest wording.
+function applyEdits(courses,records){for(const course of courses||[]){
+ const base=bases.get(course)||{skills:course.skills.slice(),combined:course.combined.slice()};bases.set(course,base);
+ course.skills=base.skills.map(k=>edited(k,records?.[editKey(course,k.id)]));
+ course.combined=base.combined.map((c,i)=>edited(c,records?.[editKey(course,'c'+i)]));
+}}
 // Question tutoring never awards completion for the separate OX sets.
 function overlay(state){return state;}
 function shouldStart(s,setId,content){return !!(s&&s.screen!=='summary')||(!summary(s).complete&&(content?.covers||covers).includes(setId));}
@@ -35,13 +63,14 @@ function create({storage,prefix,content,now=Date.now,onChange=()=>{},onParagraph
   onChange(state,saveError);return true;
  }
  function start(){state=read(storage,prefix,content)||state;if(state){onChange(state);return;}const next={schema:1,content:clone(content),createdAt:now(),updatedAt:now(),screen:'welcome',mode:'learn',index:0,node:'main',diagnostic:[],results:{},combined:content.combined.map(()=>({correct:false})),countedParagraphs:[],queue:[],queueIndex:0,helpThisRound:false};for(const k of content.skills)next.results[k.id]={first:null,help:false,reasonWrong:false,solved:false,pending:false,independent:false,recallCorrect:false};persist(next,{kind:'start'});}
- const skill=(s=state)=>s.content.skills[s.index];
+ const skill=(s=state)=>{const k=s.content.skills[s.index];return content.skills.find(x=>x.id===k?.id)||k;};
+ const combinedItem=(s=state)=>(content.combined?.length===s.content.combined.length?content.combined:s.content.combined)[s.index];
  function question(s=state){const k=skill(s);if(s.screen==='diagnostic'){
-  const id=s.content.diagnostic[s.diagnostic.length],base=s.content.skills.find(k=>k.id===id).main;
+  const id=s.content.diagnostic[s.diagnostic.length],base=(content.skills.find(k=>k.id===id)||s.content.skills.find(k=>k.id===id)).main;
   // Presentation fixes apply to an in-progress diagnostic too; saved answers and grading stay intact.
   const context=content.diagnosticContext?.[id]||s.content.diagnosticContext?.[id];
   return context?{...base,prompt:context.prompt,context,diagnosticRevision:content.diagnosticRevision||s.content.diagnosticRevision}:base;
- }if(s.mode==='combined'){const c=s.content.combined[s.index];return s.node==='narrow1'?c.narrow[0]:s.node==='narrow2'?c.narrow[1]:s.node==='retest'?c.retest:s.combinedReview?c.review:c;}if(s.node==='evidence')return k.evidence;if(s.mode==='recall'&&s.node==='recall')return k.recall;if(s.node==='narrow1')return k.narrow[0];if(s.node==='narrow2')return k.narrow[1];if(s.node==='retest')return k.retest;if(s.mode==='review')return k.review;return k.main;}
+ }if(s.mode==='combined'){const c=combinedItem(s);return s.node==='narrow1'?c.narrow[0]:s.node==='narrow2'?c.narrow[1]:s.node==='retest'?c.retest:s.combinedReview?c.review:c;}if(s.node==='evidence')return k.evidence;if(s.mode==='recall'&&s.node==='recall')return k.recall;if(s.node==='narrow1')return k.narrow[0];if(s.node==='narrow2')return k.narrow[1];if(s.node==='retest')return k.retest;if(s.mode==='review')return k.review;return k.main;}
  function beginSkill(s,index,reading=true){s.index=index;s.node=s.diagnostic.find(d=>d.id===s.content.skills[index].id)?.result==='correct'?'retest':'main';s.helpThisRound=false;s.screen=reading?'reading':'question';s.notice='';}
  function complete(s){const k=skill(s),r=s.results[k.id];r.solved=true;r.dueAt=r.dueAt||now()+20*3600000;
   if(s.mode==='learn'&&!r.help&&!r.reasonWrong)r.independent=true;
@@ -103,7 +132,7 @@ function create({storage,prefix,content,now=Date.now,onChange=()=>{},onParagraph
   if(action.type==='answer'){const asked=question(state);event.prompt=asked.prompt;if(state.screen==='diagnostic'&&asked.context){event.context=clone(asked.context);event.diagnosticRevision=asked.diagnosticRevision;}event.selectedText=state.node==='evidence'&&action.value!=='?'?asked.groups[action.value].map(id=>Object.values(state.content.sources).flatMap(p=>p.sentences).find(x=>x.id===id)?.text||'').join(' '):String(action.value);}
   persist(s,event);
  }
- return {start,act,question,content,key,state:()=>state,summary:()=>summary(state,now()),error:()=>saveError};
+ return {start,act,question,content,key,skill:()=>state&&skill(),combinedItem:()=>state&&combinedItem(),state:()=>state,summary:()=>summary(state,now()),error:()=>saveError};
 }
-return {create,read,summary,overlay,shouldStart,covers,suffix,suffixFor,eventSuffix,level};
+return {create,read,summary,overlay,shouldStart,covers,suffix,suffixFor,eventSuffix,level,editKey,ladderItem,applyEdits};
 })();

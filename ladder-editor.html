@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>질문 사다리</title>
+<style>
+:root{--ink:#22332f;--muted:#5d716a;--line:#cfdcd6;--soft:#eef3f1;--card:#fff;--accent:#1f5c4a;--ok:#e3f3ea;--okline:#7fb99a;--warn:#fff4dc;--warnline:#e0b45a;color:var(--ink);background:var(--soft);font:16px/1.6 system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--soft)}
+main{max-width:980px;margin:auto;padding:28px 16px 80px}
+h1{font-size:1.7rem;margin:0 0 6px}
+h2{font-size:1.25rem;margin:0}
+p{margin:0 0 10px}
+small,.muted{color:var(--muted)}
+button,input,textarea{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 13px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline}
+:focus-visible{outline:3px solid #7fb4a2;outline-offset:2px}
+.intro{margin-bottom:18px}
+.keybar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.keybar input{flex:1 1 220px;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+.keybar .status{flex-basis:100%;margin:0;font-size:.9rem}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.course-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin:6px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.card-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.card-head h3{margin:0;font-size:1.08rem;flex:1 1 240px}
+.tag{font-size:.78rem;border-radius:999px;padding:2px 9px;background:var(--soft);border:1px solid var(--line);white-space:nowrap}
+.tag.saved{background:var(--ok);border-color:var(--okline)}
+.tag.stale{background:var(--warn);border-color:var(--warnline)}
+.step{border-top:1px solid #e4ece8;padding:10px 0 4px;display:grid;grid-template-columns:150px minmax(0,1fr);gap:4px 14px}
+.step>.label{font-size:.85rem;font-weight:700;color:var(--muted);padding-top:2px}
+.step .prompt{margin:0 0 6px;font-weight:600}
+.choices{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.choices li{padding:4px 10px;border-radius:8px;border:1px solid #e4ece8}
+.choices li.answer{background:var(--ok);border-color:var(--okline);font-weight:600}
+.choices li.answer::after{content:"  ✓ 정답";font-size:.8rem;color:var(--accent)}
+.quote{margin:4px 0 0;padding:6px 10px;border-left:3px solid var(--okline);background:#f6faf8;font-size:.93rem}
+.words{display:flex;flex-wrap:wrap;gap:4px}
+.words span{font-size:.85rem;background:var(--soft);border-radius:6px;padding:1px 7px}
+.edit textarea,.edit input[type=text]{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.edit textarea{min-height:64px;resize:vertical}
+.option-row{display:flex;gap:6px;align-items:center;margin-top:5px}
+.option-row input[type=text]{flex:1}
+.option-row label{display:flex;align-items:center;gap:4px;font-size:.85rem;white-space:nowrap}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.error{color:#9b2c1f;font-weight:600;margin:8px 0 0}
+.empty{padding:30px;text-align:center}
+@media (max-width:640px){.step{grid-template-columns:1fr}.step>.label{padding-top:0}}
+</style>
+</head>
+<body>
+<main>
+  <header class="intro">
+    <h1>질문 사다리</h1>
+    <p>2-2 ‘질문하며 읽기’에 나오는 질문을 과정별로 확인하고 고칩니다. 저장하면 학생 화면에 바로 반영되고, 학생이 이미 답한 기록은 그대로 남습니다.</p>
+    <small>근거 문장과 문단 구성은 원고 파일에서만 바꿀 수 있어요. 원고: 문제 원고/2-2 질문 사다리 4~18문단.json</small>
+  </header>
+  <section class="keybar" aria-label="편집 키">
+    <input id="editor-key" type="password" autocomplete="off" placeholder="문제 관리와 같은 편집 키" aria-label="편집 키">
+    <button id="unlock" type="button" class="primary">편집 시작</button>
+    <p class="status muted" id="key-status" role="status">편집 키 없이도 모든 질문을 볼 수 있어요.</p>
+  </section>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="과정"></nav>
+  <section id="course" aria-live="polite"><p class="empty muted">질문을 불러오는 중입니다.</p></section>
+</main>
+<script defer src="student-settings.js?v=1d8c1198e5fe"></script><script defer src="assets/question-patches.js?v=6f0aec9bf44c"></script><script defer src="assets/socratic-courses.js?v=89df2519d437"></script><script defer src="assets/socratic-pilot.js?v=7df24487ada8"></script><script defer src="assets/ladder-editor.js?v=e17dd3247bc9"></script>
+</body>
+</html>

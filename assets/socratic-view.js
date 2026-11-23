@@ -9,7 +9,7 @@ function map(s,box){const m=HomeworkSocratic.summary(s),list=el('ul','socratic-s
 function mount({root,model,onHome,onContinue}){
  let live=true;
  const button=(parent,label,action,primary=false,id)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';if(id)b.id=id;b.onclick=action;parent.append(b);return b;};
- function render(){if(!live)return;const s=model.state();if(!s)return;root.replaceChildren();const wrap=el('section','socratic-panel');root.append(wrap);const heading=el('header','socratic-heading');heading.append(el('small','','2-2 · '+course(s)+' · 질문하며 읽기'),el('h2','',s.screen==='diagnostic'?'알고 있는 것부터 확인해요':s.screen==='summary'?'여기까지 배운 내용':s.screen==='welcome'?'하나씩 읽고, 생각하고, 확인해요':s.screen==='placement'?'이제 글을 읽으며 확인해요':s.mode==='combined'?course(s)+' · 핵심 연결':s.mode==='recall'?'본문 없이 기억해 보기':place(s.content.skills[s.index])+' · '+s.content.skills[s.index].title));wrap.append(heading);
+ function render(){if(!live)return;const s=model.state();if(!s)return;const current=model.skill?.()||s.content.skills[s.index];root.replaceChildren();const wrap=el('section','socratic-panel');root.append(wrap);const heading=el('header','socratic-heading');heading.append(el('small','','2-2 · '+course(s)+' · 질문하며 읽기'),el('h2','',s.screen==='diagnostic'?'알고 있는 것부터 확인해요':s.screen==='summary'?'여기까지 배운 내용':s.screen==='welcome'?'하나씩 읽고, 생각하고, 확인해요':s.screen==='placement'?'이제 글을 읽으며 확인해요':s.mode==='combined'?course(s)+' · 핵심 연결':s.mode==='recall'?'본문 없이 기억해 보기':place(current)+' · '+current.title));wrap.append(heading);
  const top=el('div','socratic-toolbar');button(top,'저장하고 학습 현황',onHome,false,'socratic-home');top.append(el('span','','질문 시간 제한 없음 · 직접 다음으로 이동'));heading.append(top);
  if(model.error())wrap.append(el('p','socratic-error',model.error()));
  const act=(type,value)=>{model.act({type,value});render();};
@@ -20,15 +20,15 @@ function mount({root,model,onHome,onContinue}){
  if(m.due.length)button(card,'기억 확인하기 · '+m.due.length+'개',()=>act('recall'),true,'socratic-recall');
  if(m.complete)button(card,'본문 OX 이어 풀기',onContinue,true,'socratic-continue');
  button(card,'학습 현황으로',onHome);wrap.append(card);return;}
- const k=s.content.skills[s.index],q=model.question(),feedback=['explanation','evidence-feedback','feedback'].includes(s.screen),hidePassage=s.screen==='diagnostic'||s.mode==='recall'&&s.node==='recall';
+ const k=current,c=s.mode==='combined'?model.combinedItem?.()||s.content.combined[s.index]:null,q=model.question(),feedback=['explanation','evidence-feedback','feedback'].includes(s.screen),hidePassage=s.screen==='diagnostic'||s.mode==='recall'&&s.node==='recall';
  const grid=el('div','socratic-grid'),left=el('article','socratic-passage'),right=el('section','socratic-question');grid.append(left,right);wrap.append(grid);
- const explanation=s.mode==='combined'?s.content.combined[s.index].why:k.why;
- const highlighted=s.mode==='combined'?s.content.combined[s.index].valid:s.screen==='evidence-feedback'&&k.evidence?k.evidence.correct.flatMap(i=>k.evidence.groups[i]):k.valid;
+ const explanation=c?c.why:k.why;
+ const highlighted=c?c.valid:s.screen==='evidence-feedback'&&k.evidence?k.evidence.correct.flatMap(i=>k.evidence.groups[i]):k.valid;
  if(s.screen==='diagnostic'&&q.context){left.setAttribute('aria-label','진단 질문에 필요한 내용');left.append(el('h3','',q.context.title));for(const text of q.context.text)left.append(el('p','socratic-source',text));left.append(el('small','','위 내용을 읽고 질문에 답해 보세요.'));}
  else if(hidePassage){left.append(el('h3','','지금은 기억으로 생각해 봐요'),el('p','','모르면 “모름”을 눌러도 괜찮아요.'));}
  else {
   const bar=el('div','socratic-passage-title');bar.append(el('h3','','지문'));button(bar,'지문 크게 보기',()=>{const d=el('dialog','socratic-dialog');const body=left.cloneNode(true);body.querySelectorAll('button').forEach(b=>b.remove());d.append(body);button(d,'닫기',()=>{d.close();d.remove();},true);document.body.append(d);d.addEventListener('close',()=>d.remove(),{once:true});d.showModal();});left.append(bar);
-  const sources=sourceIds(s,s.mode==='combined'?s.content.combined[s.index]:k).map(id=>s.content.sources[id]).filter(Boolean);
+  const sources=sourceIds(s,c||k).map(id=>(model.content?.sources||s.content.sources)[id]||s.content.sources[id]).filter(Boolean);
   for(const source of sources){left.append(el('h4','',source.label));const p=el('p','socratic-source');for(const sentence of source.sentences){p.append(el(feedback&&highlighted.includes(sentence.id)?'mark':'span','',sentence.text+' '));}left.append(p);}
   if(feedback){const note=el('aside','socratic-explanation');note.setAttribute('aria-label','지문 속 근거와 해설');note.append(el('strong','','근거와 해설'),el('p','',explanation));if(s.screen==='evidence-feedback'&&s.notice)note.append(el('p','',s.notice));left.append(note);}
  }

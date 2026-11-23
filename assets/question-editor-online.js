@@ -32,7 +32,7 @@
         ]);
         versions = result.questions;
         return {questions:catalog, edits:Object.fromEntries(Object.entries(versions)
-          .filter(([, record]) => record.edit !== null).map(([id, record]) => [id, record.edit]))};
+          .filter(([id, record]) => record.edit !== null && !id.startsWith('ladder:')).map(([id, record]) => [id, record.edit]))};
       }
       if (path !== '/api/save') throw new Error('지원하지 않는 작업입니다.');
       const {id, edit} = payload;
