@@ -2649,59 +2649,116 @@ var HomeworkDaily = (function () {
 })();
 
 ;
-/* 진단·낚시: 내용을 몰라서 틀리는지, 함정에 걸리는지, 바꿔 말한 참을 못 알아보는지 나누고 다음 문제를 고릅니다. */
+/* 진단 10문제: 한 판에 10문제(1문제 1점).
+   틀리면 그 문장에 든 함정마다 갈래를 나눠 확인한다. 갈래에서 또 틀리면 같은 함정의 새 문장이 이어 나오고,
+   갈래를 모두 맞히면 그 문제는 +1(만회). 만회했더라도 틀린 문장은 판 끝에서 맞힐 때까지 다시 푼다.
+   나중 복습은 처음에 틀린 출제 내용을 다른 유형 문장으로 묻는다. */
 (function(global){
 'use strict';
-const LABEL={content:'내용 모름',trap:'함정에 걸림',paraphrase:'바꿔 말하기 약함',ok:'이해함'};
+const KIND={T:'함정 거짓',C:'바꿔치기 거짓',P:'바꿔 말한 참',O:'원문 참'};
+// 거짓 5(함정 3·바꿔치기 2), 참 5(바꿔 말한 참 3·원문 참 2): O만 찍어도, X만 찍어도 5점이다.
+const PLAN=['T','T','T','C','C','P','P','P','O','O'];
+const OTHER={T:['C','P','O'],C:['T','P','O'],P:['T','C','O'],O:['P','T','C']};  // 복습에서 물을 다른 유형 순서
+const PARAPHRASE='바꿔 말하기';  // 맞는 문장을 틀렸을 때의 갈래
+const BRANCH_LIMIT=3;            // 갈래 하나에서 이어 나오는 문장은 3개까지
+const REDO='오답 다시 풀기';
 function byId(pool){const map=new Map();for(const p of pool.parts)for(const q of p.items)map.set(q.id,q);return map;}
-function base(pool,suffix,name,parts,round){
- return {id:pool.id.replace(/-pool$/,'-'+suffix),unitId:pool.unitId,chapterIds:pool.chapterIds,group:pool.group,name,level:'기본',revision:pool.revision,originPage:pool.originPage,timedMode:pool.timedMode,shuffleQuestions:true,diagnosisRound:round,parts};
-}
-// 1차 진단: 진단용 출제 내용마다 바꿔치기 거짓·함정 거짓·바꿔 말한 참을 하나씩.
-function check(pool){
- const items=byId(pool),own=pool.facts.filter(f=>f.diagnose),part=(name,kind)=>({name,items:own.map(f=>items.get(f.items[kind]))});
- return base(pool,'check','1차 진단 · '+own.length*3+'문제',[part('내용 · 바꿔치기 거짓','C'),part('함정 · 함정 거짓','T'),part('바꿔말하기 · 바꿔 말한 참','P')],1);
-}
-// 바꿔치기를 틀리면 내용 모름, 그것은 맞히고 함정을 틀리면 함정, 둘 다 맞히고 바꿔 말한 참을 틀리면 바꿔 말하기 약함.
-function verdict(pool,logs){
- const ok=new Map();for(const l of logs)ok.set(l.qid,!!l.ok);
- const facts=pool.facts.filter(f=>f.diagnose).map(f=>{
-  const [c,t,p]=['C','T','P'].map(k=>ok.get(f.items[k]));
-  if([c,t,p].includes(undefined))return {id:f.id,ref:f.ref,kind:'skipped',twist:null};
-  const kind=!c?'content':!t?'trap':!p?'paraphrase':'ok';
-  return {id:f.id,ref:f.ref,kind,twist:kind==='content'?f.twist.C:kind==='trap'?f.twist.T:null};
- });
- const counts={};for(const k of Object.keys(LABEL))counts[k]=facts.filter(f=>f.kind===k).length;
- return {facts,counts};
-}
-// 기출에 나온 횟수: 많이 나온 함정일수록 먼저, 더 많이 묻는다(4회 이상 3문제, 1~3회 2문제, 0회 1문제).
 const examCount=(pool,twist)=>pool.examFrequency?.[twist]||0;
-const trapQuota=count=>count>=4?3:count>=1?2:1;
-// 낚시: 약한 갈래만 골라 진단에 쓰지 않은 출제 내용에서 다시 묻는다. 맞는 문장을 섞어 X만 찍지 못하게 한다.
-function fishing(pool,result){
- const items=byId(pool),rest=pool.facts.filter(f=>!f.diagnose),used=new Set(),parts=[],count=twist=>examCount(pool,twist);
- const pick=(facts,kind,n,avoid=[])=>{const out=[];for(const f of [...facts.filter(f=>!avoid.includes(f.ref)),...facts.filter(f=>avoid.includes(f.ref))]){const id=f.items[kind];if(out.length<n&&!used.has(id)){used.add(id);out.push(items.get(id));}}return out;};
- for(const twist of [...new Set(result.facts.filter(f=>f.kind==='trap').map(f=>f.twist))].sort((a,b)=>count(b)-count(a))){
-  const refs=result.facts.filter(f=>f.kind==='trap'&&f.twist===twist).map(f=>f.ref);
-  parts.push({name:'함정 · '+twist+' · 기출 '+count(twist)+'회',twist,items:[...pick(rest.filter(f=>f.twist.T===twist),'T',trapQuota(count(twist)),refs),...pick(rest,'P',1,refs)]});
+const factOf=(pool,id)=>pool.facts.find(f=>f.id===id);
+const twistsOf=(fact,kind)=>kind==='T'||kind==='C'?fact.twists[kind]:[];
+const kindFor=(pool,twist)=>twist===PARAPHRASE?'P':(pool.contentTwists||[]).includes(twist)?'C':'T';
+function shuffled(list,rand){return list.map(v=>[rand(),v]).sort((a,b)=>a[0]-b[0]).map(p=>p[1]);}
+const usedIds=plan=>new Set(plan.slots.flatMap(s=>[s.main,...s.seq.map(e=>e.id)]));
+const slotName=i=>(i+1)+'번';
+const newSlot=(pool,fact,kind)=>({fact:fact.id,kind,twists:twistsOf(fact,kind),main:fact.items[kind],branches:[],seq:[]});
+
+// 새 10문제: 출제 내용이 겹치지 않게, 안 본 문장 먼저. 함정은 지난번에 놓친 함정, 그다음 기출에 많이 나온 함정부터.
+function session(pool,{seen=[],missed=[],rand=Math.random}={}){
+ seen=new Set(seen);const used=new Set(),picks=[],paragraphs=new Map();
+ const cost=(f,kind)=>{const ts=twistsOf(f,kind);return (seen.has(f.items[kind])?100:0)-(ts.some(t=>missed.includes(t))?50:0)-Math.max(0,...ts.map(t=>examCount(pool,t)))+(paragraphs.get(f.ref)||0)*3+rand();};
+ for(const kind of PLAN){
+  const twists=new Set(picks.filter(p=>p.kind==='T').map(p=>p.fact.twist.T));
+  const f=pool.facts.filter(f=>!used.has(f.id)).map(f=>({f,c:cost(f,kind)+(kind==='T'&&twists.has(f.twist.T)?20:0)})).sort((a,b)=>a.c-b.c)[0].f;
+  used.add(f.id);paragraphs.set(f.ref,(paragraphs.get(f.ref)||0)+1);picks.push({fact:f,kind});
  }
- const content=result.facts.filter(f=>f.kind==='content').sort((a,b)=>count(b.twist)-count(a.twist)).slice(0,4).map(m=>pool.facts.find(f=>f.id===m.id));
- if(content.length)parts.push({name:'내용 · 근거 보고 다시',items:[...pick(content,'O',4),...pick(content,'C',4)]});
- if(result.counts.paraphrase)parts.push({name:'바꿔말하기 · 다시',items:[...pick(rest,'P',3),...pick(rest,'C',1)]});
- const total=parts.reduce((n,p)=>n+p.items.length,0);
- // 묶음 순서를 지켜 많이 나온 함정부터 풀게 하고, 묶음 안에서만 섞는다.
- return total?{...base(pool,'fish','낚시 · '+total+'문제',parts,2),shuffleQuestions:false,shuffleWithinParts:true}:null;
+ return {mode:'ten',slots:shuffled(picks,rand).map(p=>newSlot(pool,p.fact,p.kind)),redo:[]};
 }
-// 낚시 묶음을 다 맞히면 실수, 하나라도 또 틀리면 약점.
-function fishingResult(set,logs){
- const ok=new Map();for(const l of logs)ok.set(l.qid,!!l.ok);
- return set.parts.map(p=>{const got=p.items.filter(q=>ok.get(q.id)).length;return {name:p.name,got,total:p.items.length,steady:got===p.items.length};});
+// 나중 복습: 지난 판에서 처음에 틀린 출제 내용을, 다른 유형 문장으로. 안 본 문장 먼저.
+function review(pool,last,{seen=[]}={}){
+ seen=new Set(seen);
+ const slots=(last?.slots||[]).filter(s=>!s.first).map(s=>{const fact=factOf(pool,s.fact),kind=OTHER[s.kind].find(k=>!seen.has(fact.items[k]))||OTHER[s.kind][0];return newSlot(pool,fact,kind);});
+ return slots.length?{mode:'review',slots,redo:[]}:null;
+}
+// 갈래 문장: 그 함정이 든 다른 출제 내용의 문장. 그 함정만 든 문장, 이번 판에 안 쓴 문장, 안 본 문장 먼저.
+function branchItem(pool,plan,slot,twist,seen,rand){
+ const kind=kindFor(pool,twist),used=usedIds(plan);
+ const all=shuffled(pool.facts.filter(f=>f.id!==slot.fact&&!used.has(f.items[kind])&&(kind==='P'||twistsOf(f,kind).includes(twist))),rand);
+ const only=f=>kind==='P'||twistsOf(f,kind).length===1,fresh=f=>!seen.has(f.items[kind]);
+ return [...all.filter(f=>only(f)&&fresh(f)),...all.filter(only),...all.filter(fresh),...all][0]?.items[kind]||null;
+}
+// 정답이 늘 X(또는 O)로 이어지지 않게 섞는 맞는(또는 틀린) 문장. 결과는 갈래 판정에 넣지 않는다.
+function controlItem(pool,plan,slot,twist,rand){
+ const kind=kindFor(pool,twist)==='P'?'C':'P',used=usedIds(plan);
+ return shuffled(pool.facts.filter(f=>f.id!==slot.fact&&!used.has(f.items[kind])),rand)[0]?.items[kind]||null;
+}
+// 갈래 b를 시작하거나 이어 간다. 문장이 없으면 그 갈래는 확인하지 못한 것으로 두고 다음 갈래로 간다.
+function advance(pool,plan,i,b,seen,rand,out){
+ const slot=plan.slots[i];
+ for(;b<slot.branches.length;b++){
+  const twist=slot.branches[b].twist,id=branchItem(pool,plan,slot,twist,seen,rand);
+  if(!id){slot.branches[b].ok=false;continue;}
+  if(rand()<0.5){const c=controlItem(pool,plan,slot,twist,rand);if(c){slot.seq.push({id:c,b,control:true});out.push(c);}}
+  slot.seq.push({id,b});out.push(id);return;
+ }
+}
+// 답한 뒤 할 일. 틀리면 판 끝에 다시 풀 문장을 붙이고(맞힐 때까지), 갈래를 열거나 이어 간다.
+function onAnswer(pool,plan,q,ok,{seen=[],rand=Math.random}={}){
+ seen=new Set(seen);const items=byId(pool),base=q.redoOf||q.id,ids=[],out={redo:null,insert:[]};
+ if(!ok){const n=plan.redo.filter(id=>id===base).length+1;plan.redo.push(base);out.redo={...redoItem(items.get(base),n),part:REDO,pi:plan.slots.length};}
+ if(!q.redoOf){
+  const i=plan.slots.findIndex(s=>s.main===q.id||s.seq.some(e=>e.id===q.id));
+  if(i>=0){
+   const slot=plan.slots[i],entry=slot.seq.find(e=>e.id===q.id);
+   if(!entry&&!ok){slot.branches=(slot.twists.length?slot.twists:[PARAPHRASE]).map(twist=>({twist,ok:null}));advance(pool,plan,i,0,seen,rand,ids);}
+   else if(entry&&!entry.control){
+    const branch=slot.branches[entry.b],tries=slot.seq.filter(e=>e.b===entry.b&&!e.control).length;
+    if(ok){branch.ok=true;advance(pool,plan,i,entry.b+1,seen,rand,ids);}
+    else if(tries<BRANCH_LIMIT)advance(pool,plan,i,entry.b,seen,rand,ids);
+    else{branch.ok=false;advance(pool,plan,i,entry.b+1,seen,rand,ids);}
+   }
+   out.insert=ids.map(id=>({...items.get(id),chainOf:slot.main,part:slotName(i),pi:i}));
+  }
+ }
+ return out;
+}
+// 저장해 둔 판으로 세트를 만든다(이어 풀기에도 같은 순서). 묶음 이름은 '1번'처럼 두어 정답을 드러내지 않는다.
+function build(pool,plan){
+ const items=byId(pool),count=new Map();
+ const parts=plan.slots.map((s,i)=>({name:slotName(i),items:[items.get(s.main),...s.seq.map(e=>({...items.get(e.id),chainOf:s.main}))]}));
+ if(plan.redo.length)parts.push({name:REDO,items:plan.redo.map(id=>{const n=(count.get(id)||0)+1;count.set(id,n);return redoItem(items.get(id),n);})});
+ return {id:pool.id.replace(/-pool$/,'-'+plan.mode),unitId:pool.unitId,chapterIds:pool.chapterIds,group:pool.group,name:plan.mode==='ten'?'10문제':'다른 유형으로 복습 · '+plan.slots.length+'문제',level:'기본',revision:pool.revision,originPage:pool.originPage,timedMode:pool.timedMode,shuffleQuestions:false,diagnosisSession:plan.mode,diagnosisPlan:plan,parts};
+}
+const redoItem=(q,n)=>({...q,id:q.id+'#다시'+n,redoOf:q.id});
+// 한 문제에 1점: 처음에 맞히면 1점, 틀렸으면 갈래를 모두 맞혀야 1점(만회).
+function score(plan,logs){
+ const ok=new Map();for(const l of logs)if(l.qid)ok.set(l.qid,ok.get(l.qid)||!!l.ok);
+ const slots=plan.slots.map((s,i)=>{const first=ok.get(s.main)===true;
+  const branches=s.branches.map((b,j)=>({twist:b.twist,ok:s.seq.some(e=>e.b===j&&!e.control&&ok.get(e.id)===true)}));
+  const redeemed=!first&&branches.length>0&&branches.every(b=>b.ok);
+  return {name:slotName(i),kind:s.kind,twists:s.twists,fact:s.fact,main:s.main,first,redeemed,branches,got:first||redeemed?1:0};});
+ const redoIds=[...new Set(plan.redo)];
+ return {slots,got:slots.reduce((n,s)=>n+s.got,0),max:slots.length,first:slots.filter(s=>s.first).length,redeemed:slots.filter(s=>s.redeemed).length,
+  redo:redoIds.length,redoDone:redoIds.filter(id=>logs.some(l=>String(l.qid||'').startsWith(id+'#다시')&&l.ok)).length};
 }
 function describe(result){
- const traps=new Map();for(const f of result.facts)if(f.kind==='trap')traps.set(f.twist,(traps.get(f.twist)||0)+1);
- return ['content','trap','paraphrase','ok'].map(k=>LABEL[k]+' '+result.counts[k]+'개'+(k==='trap'&&traps.size?' ('+[...traps].map(([t,n])=>t+' '+n).join(', ')+')':''));
+ const lines=['처음에 맞힘 '+result.first+'개','만회 +'+result.redeemed,'놓침 '+(result.max-result.got)+'개'];
+ if(result.redo)lines.push('오답 다시 풀기 '+result.redoDone+'/'+result.redo);
+ for(const s of result.slots.filter(s=>!s.first))lines.push(s.name+' '+KIND[s.kind]+(s.branches.length?' → '+s.branches.map(b=>b.twist+(b.ok?' ✓':' ✗')).join(' · '):''));
+ return lines;
 }
-global.HomeworkDiagnosis={LABEL,check,verdict,fishing,fishingResult,describe};
+// 다음 판에서 먼저 낼 함정: 처음에 틀렸고 갈래에서도 다 맞히지 못한 함정.
+const missedTwists=last=>(last?.slots||[]).filter(s=>!s.first).flatMap(s=>s.branches.filter(b=>!b.ok).map(b=>b.twist));
+global.HomeworkDiagnosis={KIND,PLAN,REDO,PARAPHRASE,session,review,onAnswer,build,score,describe,missedTwists};
 })(typeof window==='undefined'?globalThis:window);
 
 ;
@@ -3404,44 +3461,50 @@ function renderStageMap(model,home){
  }
  map.appendChild(road);home.appendChild(map);
 }
-/* ---- 진단·낚시 시범: 단원 자료에 진단 문장 묶음이 있을 때만 보입니다. ---- */
+/* ---- 진단 10문제(시범): 단원 자료에 진단 문장 묶음이 있을 때만 보입니다. 규칙은 assets/diagnosis.js. ---- */
 const diagnosisUnit=options.units?.find(u=>u.diagnosis),diagnosisPool=diagnosisUnit&&{id:diagnosisUnit.diagnosis.setId,dataFile:diagnosisUnit.diagnosis.dataFile};
-const diagnosisKey=PREFIX+'diagnosis_'+(diagnosisPool?.id||''),diagnosisSetId=round=>diagnosisPool.id.replace(/-pool$/,'-'+round);
+const diagnosisKey=PREFIX+'diagnosis10_'+(diagnosisPool?.id||''),diagnosisSetId=mode=>diagnosisPool.id.replace(/-pool$/,'-'+mode);
 function loadDiagnosis(){try{return JSON.parse(localStorage.getItem(diagnosisKey)||'{}')||{};}catch(_){return {};}}
 function saveDiagnosis(value){try{localStorage.setItem(diagnosisKey,JSON.stringify(value));}catch(_){}}
-async function startDiagnosis(round,fresh=false){
+async function startDiagnosis(mode){
  try{await loadSet(diagnosisPool);}catch(_){loadingStatus.textContent='진단 문제를 불러오지 못했어요. 다시 눌러 주세요.';loadingStatus.hidden=false;return;}
- if(fresh){clearRun(diagnosisSetId('check'));clearRun(diagnosisSetId('fish'));saveDiagnosis({});}
- const D=global.HomeworkDiagnosis,set=round==='check'?D.check(diagnosisPool):D.fishing(diagnosisPool,loadDiagnosis().check);
- if(set){manualSelection=false;start(set,fresh?null:loadRun(set.id));}
+ const D=global.HomeworkDiagnosis,state=loadDiagnosis(),saved=state.current?.[mode],resume=saved&&loadRun(diagnosisSetId(mode));
+ const plan=resume?saved:mode==='ten'?D.session(diagnosisPool,{seen:state.seen,missed:D.missedTwists(state.last)}):D.review(diagnosisPool,state.last,{seen:state.seen});
+ if(!plan)return;
+ if(!resume){clearRun(diagnosisSetId(mode));saveDiagnosis({...state,current:{...state.current,[mode]:plan}});}
+ manualSelection=false;start(D.build(diagnosisPool,plan),resume||null);
+}
+// 답할 때마다: 틀리면 판 끝에 다시 풀 문장을 붙이고, 함정마다 갈래 확인 문장을 바로 다음에 낸다. 이어 풀기를 위해 판을 저장한다.
+function diagnosisOnAnswer(q,ok){
+ const plan=run.set.diagnosisPlan,state=loadDiagnosis(),{redo,insert}=global.HomeworkDiagnosis.onAnswer(diagnosisPool,plan,q,ok,{seen:state.seen});
+ if(redo)run.list.push({...redo,qno:run.list.length+1,max:1});
+ if(insert.length)run.list.splice(run.idx+1,0,...insert.map((x,k)=>({...x,qno:run.list.length+k+1,max:1})));
+ saveDiagnosis({...state,current:{...state.current,[plan.mode]:plan}});
 }
 function renderDiagnosisCard(home){
  if(!diagnosisPool||!global.HomeworkDiagnosis)return;
- const D=global.HomeworkDiagnosis,saved=loadDiagnosis(),card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course';
- card.append(el('small','','시범 · 진단과 낚시'),el('h3','',diagnosisUnit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','30문제로 내용을 몰라서 틀리는지, 함정에 걸리는지, 바꿔 말한 맞는 문장을 못 알아보는지 나눠요. 약한 쪽만 골라 낚시 문제를 더 줘요.'));
- if(saved.check)card.appendChild(el('p','diagnosis-line','1차 진단 · '+D.describe(saved.check).join(' · ')));
- if(saved.fish)card.appendChild(el('p','diagnosis-line','낚시 · '+saved.fish.map(p=>p.name+' '+p.got+'/'+p.total+(p.steady?' 실수':' 약점')).join(' · ')));
- const add=(label,id,action)=>{const b=el('button','act ghost',label);b.type='button';b.id=id;b.onclick=()=>continueStudy(action);card.appendChild(b);};
- if(!saved.check)add(loadRun(diagnosisSetId('check'))?'진단 이어 하기':'진단 시작하기','diagnosis-start',()=>startDiagnosis('check'));
- else{if(saved.check.fishTotal&&!saved.fish)add('낚시 문제 '+saved.check.fishTotal+'개 풀기','diagnosis-fish',()=>startDiagnosis('fish'));add('진단 다시 하기','diagnosis-restart',()=>startDiagnosis('check',true));}
+ const D=global.HomeworkDiagnosis,state=loadDiagnosis(),last=state.last,card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course';
+ card.append(el('small','','시범 · 진단 10문제'),el('h3','',diagnosisUnit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','한 판에 10문제예요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
+ if(last)card.appendChild(el('p','diagnosis-line','지난 판 · '+last.max+'점 중 '+last.got+'점 · '+D.describe(last).join(' · ')));
+ const add=(label,id,mode)=>{const b=el('button','act ghost',label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(mode));card.appendChild(b);};
+ const resumeTen=state.current?.ten&&loadRun(diagnosisSetId('ten')),resumeReview=state.current?.review&&loadRun(diagnosisSetId('review')),misses=last?last.slots.filter(s=>!s.first).length:0;
+ add(resumeTen?'10문제 이어 풀기':'10문제 풀기','diagnosis-start','ten');
+ if(resumeReview||misses)add(resumeReview?'복습 이어 풀기':'틀린 '+misses+'문제 다른 유형으로 복습','diagnosis-review','review');
  home.appendChild(card);
 }
 function paintDiagnosisResult(){
- const D=global.HomeworkDiagnosis,box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
- if(run.set.diagnosisRound===1){
-  const result=D.verdict(diagnosisPool,run.logs),fish=D.fishing(diagnosisPool,result),lines=D.describe(result);
-  saveDiagnosis({check:{...result,at:Date.now(),fishTotal:fish?fish.parts.reduce((n,p)=>n+p.items.length,0):0}});
-  box.append(el('small','','1차 진단 결과'),el('h3','',fish?'약한 쪽을 찾았어요':'모두 이해했어요!'));
-  const list=el('ul');lines.forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
-  box.appendChild(el('p','','내용 모름: 바꿔치기한 거짓을 맞다고 함 · 함정에 걸림: 내용은 아는데 비튼 문장에 속음 · 바꿔 말하기 약함: 말을 바꾼 맞는 문장을 틀리다고 함'));
-  if(fish){const b=el('button','act primary','낚시 문제 '+fish.parts.reduce((n,p)=>n+p.items.length,0)+'개 풀기 →');b.type='button';b.id='diagnosis-fish-now';b.onclick=()=>continueStudy(()=>startDiagnosis('fish'));box.appendChild(b);}
-  logStudentEvent('diagnosis','1차 진단 · '+lines.join(' · '));
- }else{
-  const parts=D.fishingResult(run.set,run.logs);saveDiagnosis({...loadDiagnosis(),fish:parts});
-  box.append(el('small','','낚시 결과'),el('h3','',parts.every(p=>p.steady)?'이번엔 모두 맞혔어요 · 실수였던 것 같아요':'다시 걸린 곳은 약점으로 남겨 둘게요'));
-  const list=el('ul');parts.forEach(p=>list.appendChild(el('li','',p.name+' · '+p.got+'/'+p.total+' · '+(p.steady?'실수였어요':'약점이에요'))));box.appendChild(list);
-  logStudentEvent('diagnosis','낚시 · '+parts.map(p=>p.name+' '+p.got+'/'+p.total).join(' · '));
- }
+ const D=global.HomeworkDiagnosis,plan=run.set.diagnosisPlan,result=D.score(plan,run.logs),state=loadDiagnosis();
+ const seen=[...new Set([...(state.seen||[]),...run.logs.map(l=>String(l.qid||'').replace(/#다시\d+$/,'')).filter(Boolean)])],current={...state.current};delete current[plan.mode];
+ saveDiagnosis({...state,seen,current,last:{...result,mode:plan.mode,at:Date.now()}});
+ const box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
+ box.append(el('small','',plan.mode==='ten'?'10문제 결과':'다른 유형 복습 결과'),el('h3','',result.max+'점 중 '+result.got+'점'));
+ const list=el('ul');D.describe(result).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
+ const misses=result.slots.filter(s=>!s.first).length;
+ const add=(label,id,mode,primary)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(mode));box.appendChild(b);};
+ if(misses)add('틀린 '+misses+'문제 다른 유형으로 복습 →','diagnosis-review-now','review',true);
+ add('새 10문제 풀기','diagnosis-next-ten','ten',!misses);
+ $('#e-rows').replaceChildren();
+ logStudentEvent('diagnosis',(plan.mode==='ten'?'10문제':'복습')+' · '+result.max+'점 중 '+result.got+'점 · '+D.describe(result).join(' · '));
  $('#scr-end .result').before(box);
 }
 function renderHardCourses(model,home){
@@ -3767,6 +3830,9 @@ function renderQ(){
   $('#q-part').textContent = run.set.group+' · '+(q.readingLabel?q.readingLabel+' · '+run.set.level:run.set.name)+' — '+q.part;
   $('#q-cnt').textContent = (run.idx+1)+' / '+total;
   $('#q-prog').style.width = (run.idx/total*100)+'%';
+  if(run.set.diagnosisPlan){const mains=run.list.filter(x=>!x.chainOf&&!x.redoOf),at=mains.findIndex(x=>x.id===(q.chainOf||q.id));
+   $('#q-cnt').textContent=q.redoOf?'오답 다시 풀기 · 남은 '+run.list.slice(run.idx).filter(x=>x.redoOf).length+'문제':(at+1)+' / '+mains.length+(q.chainOf?' · 확인 문제':'');
+   $('#q-prog').style.width=((q.redoOf?mains.length:at)/mains.length*100)+'%';}
   $('#q-fb').className='fb'; $('#q-fb').textContent='';
   $('#q-check').style.display='none'; $('#q-next').style.display='none';
   $('#q-check').disabled = true;
@@ -4320,6 +4386,7 @@ function submit(forceTimeout){
   }
   if(q._evidenceOnlyReview)answerText='문제 답 이전 정답 유지 · 근거만 복습 / '+answerText;
   const ok = score===q.max;
+  if(run.set.diagnosisPlan&&diagnosisPool?._loaded)diagnosisOnAnswer(q,ok);
   if(!ok&&!evidenceResult?.failureCounted)countFailure(q);
   const streak=ok?run.logs.reduce((n,l)=>l.ok?n+1:0,0)+1:0;
   const beforeXp=game.state().xp;
@@ -4401,8 +4468,10 @@ function finish(){
   const findQuestion=l=>run.list.find(q=>l.qid?q.id===l.qid:q.part===l.part&&q.qno===l.qno);
   const wrongNow = run.logs.filter(l=>!l.ok).map(l=>{const detail=global.HomeworkResults.classify(l);return {pi:findQuestion(l).pi,qi:l.qno-1,mistakeKind:detail.kind,correctedAfterExplanation:detail.corrected,timedOut:detail.timedOut};});
   saveWrong(run.set.id, wrongNow);
-  const total = run.logs.reduce((a,l)=>a+l.score,0);
-  const max = run.list.reduce((a,q)=>a+q.max,0);
+  // 진단 10문제는 한 문제에 1점: 처음에 맞히거나, 이어 나온 같은 유형 새 문제로 만회하면 1점.
+  const diag=run.set.diagnosisPlan&&global.HomeworkDiagnosis?global.HomeworkDiagnosis.score(run.set.diagnosisPlan,run.logs):null;
+  const total = diag?diag.got:run.logs.reduce((a,l)=>a+l.score,0);
+  const max = diag?diag.max:run.list.reduce((a,q)=>a+q.max,0);
   if(!run.retry){ try{ localStorage.setItem(lastKey(run.set.id), JSON.stringify({score:total, max, at:stamp(endAt)})); }catch(e){} }
   if(options.units){
     // Keep the completed attempt available to the teacher after the in-progress run is removed.
@@ -4424,13 +4493,14 @@ function finish(){
   $('#e-retry').style.display = wrongNow.length ? '' : 'none';
   $('#e-retry').textContent = '바로 복습하기 · '+wrongNow.length+'문항 →';
   resultReview.hidden=!wrongNow.length;
+  if(diag){$('#e-retry').style.display='none';resultReview.hidden=true;}$('#e-again').hidden=!!diag;
   resultReviewNote.textContent='방금 틀린 문제만 다시 풀어요. 근거만 틀렸다면 근거 선택부터 시작해요.';
   $('#e-sub').textContent = run.attempt+'번째 풀이 · '+stamp(run.startedAt).slice(0,16)+' 시작';
   $('#e-score').textContent = total; $('#e-max').textContent = ' / '+max;
   $('#e-meta').textContent = '틀린 문항 '+wrongN+'개 · 총 '+Math.floor(dur/60)+'분 '+(dur%60)+'초 · 문항당 평균 '+(dur/run.list.length).toFixed(1)+'초';
   $('#e-rows').innerHTML = parts.map(p=>'<div class="row"><span class="nm">'+p.name+'</span><span class="track"><span class="fill" style="width:'+(p.got/p.max*100)+'%"></span></span><span class="val">'+p.got+'/'+p.max+'</span></div>').join('');
   global.HomeworkResults.render({logs:run.logs,summary:outcomeSummary,wrongs:$('#e-wrongs'),findQuestion,classified:!!options.units||['development','traps'].includes(options.page)});
-  document.getElementById('diagnosis-result')?.remove();if(run.set.diagnosisRound&&!run.retry&&diagnosisPool?._loaded)paintDiagnosisResult();
+  document.getElementById('diagnosis-result')?.remove();if(diag&&!run.retry&&diagnosisPool?._loaded)paintDiagnosisResult();
 
   enqueue({kind:'summary', uid:UID, session:run.session, set:run.set.group+' · '+run.set.name+(run.retry?' (오답)':''), attempt:run.attempt,
            score:total, max, wrong:wrongN, sec:dur, startedAt:stamp(run.startedAt), endedAt:stamp(endAt),
