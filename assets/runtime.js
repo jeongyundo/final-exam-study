@@ -2674,19 +2674,23 @@ function verdict(pool,logs){
  const counts={};for(const k of Object.keys(LABEL))counts[k]=facts.filter(f=>f.kind===k).length;
  return {facts,counts};
 }
+// 기출에 나온 횟수: 많이 나온 함정일수록 먼저, 더 많이 묻는다(4회 이상 3문제, 1~3회 2문제, 0회 1문제).
+const examCount=(pool,twist)=>pool.examFrequency?.[twist]||0;
+const trapQuota=count=>count>=4?3:count>=1?2:1;
 // 낚시: 약한 갈래만 골라 진단에 쓰지 않은 출제 내용에서 다시 묻는다. 맞는 문장을 섞어 X만 찍지 못하게 한다.
 function fishing(pool,result){
- const items=byId(pool),rest=pool.facts.filter(f=>!f.diagnose),used=new Set(),parts=[];
+ const items=byId(pool),rest=pool.facts.filter(f=>!f.diagnose),used=new Set(),parts=[],count=twist=>examCount(pool,twist);
  const pick=(facts,kind,n,avoid=[])=>{const out=[];for(const f of [...facts.filter(f=>!avoid.includes(f.ref)),...facts.filter(f=>avoid.includes(f.ref))]){const id=f.items[kind];if(out.length<n&&!used.has(id)){used.add(id);out.push(items.get(id));}}return out;};
- const content=result.facts.filter(f=>f.kind==='content').slice(0,4).map(m=>pool.facts.find(f=>f.id===m.id));
- if(content.length)parts.push({name:'내용 · 근거 보고 다시',items:[...pick(content,'O',4),...pick(content,'C',4)]});
- for(const twist of [...new Set(result.facts.filter(f=>f.kind==='trap').map(f=>f.twist))]){
+ for(const twist of [...new Set(result.facts.filter(f=>f.kind==='trap').map(f=>f.twist))].sort((a,b)=>count(b)-count(a))){
   const refs=result.facts.filter(f=>f.kind==='trap'&&f.twist===twist).map(f=>f.ref);
-  parts.push({name:'함정 · '+twist,twist,items:[...pick(rest.filter(f=>f.twist.T===twist),'T',3,refs),...pick(rest,'P',1,refs)]});
+  parts.push({name:'함정 · '+twist+' · 기출 '+count(twist)+'회',twist,items:[...pick(rest.filter(f=>f.twist.T===twist),'T',trapQuota(count(twist)),refs),...pick(rest,'P',1,refs)]});
  }
+ const content=result.facts.filter(f=>f.kind==='content').sort((a,b)=>count(b.twist)-count(a.twist)).slice(0,4).map(m=>pool.facts.find(f=>f.id===m.id));
+ if(content.length)parts.push({name:'내용 · 근거 보고 다시',items:[...pick(content,'O',4),...pick(content,'C',4)]});
  if(result.counts.paraphrase)parts.push({name:'바꿔말하기 · 다시',items:[...pick(rest,'P',3),...pick(rest,'C',1)]});
  const total=parts.reduce((n,p)=>n+p.items.length,0);
- return total?base(pool,'fish','낚시 · '+total+'문제',parts,2):null;
+ // 묶음 순서를 지켜 많이 나온 함정부터 풀게 하고, 묶음 안에서만 섞는다.
+ return total?{...base(pool,'fish','낚시 · '+total+'문제',parts,2),shuffleQuestions:false,shuffleWithinParts:true}:null;
 }
 // 낚시 묶음을 다 맞히면 실수, 하나라도 또 틀리면 약점.
 function fishingResult(set,logs){
