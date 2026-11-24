@@ -239,7 +239,7 @@ const studyCompletion=el('p','study-session-completion');studyCompletion.id='stu
 const studyExit=el('button','act ghost study-session-exit','숙제 종료');studyExit.type='button';studyExit.id='study-session-end';studyBar.append(studyLabel,studyClock,studyExit,studyProgress,studyCompletion,studyNotice);
 function paintHomeworkProgress(state=studySession?.snapshot(),today){
  const active=state?.mode==='homework'&&(state.active||!!state.completedAt);
- if(active&&today===undefined)today=daily?.snapshot();
+ if(active&&today===undefined)today=daily?daily.snapshot():undefined;  // 테스트 계정은 daily가 false다
  const lines=[];
  if(active&&today?.goal.paragraphs)lines.push('완료 문단 '+today.paragraphs.length+' / '+today.goal.paragraphs);
  if(active&&pilotActive&&pilot?.state()){const s=pilot.state();const k=s.content.skills[s.index];lines.push(s.mode==='combined'?(s.content.label||'1~3문단')+' 핵심 연결':'질문 학습 · '+(k.place||k.paragraph+'문단'));}
@@ -661,7 +661,7 @@ function renderStart(){
 }
 
 function learningState(){return global.HomeworkLearningPath.build({sets:SETS,units:options.units||[],storage:localStorage,prefix:PREFIX,page:options.page});}
-function startGuided(){const model=learningState(),target=model.next;const chosen=pilotFor(target?.set.id);if(chosen){startPilot(false,chosen);return;}const due=duePilot();if(due){startPilot(true,due);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
+function startGuided(){if(diagnosisPending()){startDiagnosis('ten');return;}const model=learningState(),target=model.next;const chosen=pilotFor(target?.set.id);if(chosen){startPilot(false,chosen);return;}const due=duePilot();if(due){startPilot(true,due);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
 function isHardSet(set){return !!set&&global.HomeworkLearningPath.isHardSet(set);}
 function startHard(unitId){
  const unit=learningState().steps.find(u=>u.id===unitId),target=unit?.hard?.next;
@@ -717,6 +717,15 @@ function diagnosisOnAnswer(q,ok){
  if(insert.length)run.list.splice(run.idx+1,0,...insert.map((x,k)=>({...x,qno:run.list.length+k+1,max:1})));
  saveDiagnosis({...state,current:{...state.current,[plan.mode]:plan}});
 }
+// 숙제로 정한 날부터 진단 10문제 한 판을 마칠 때까지 '오늘의 숙제'로 먼저 낸다.
+const koreaDay=()=>global.HomeworkDaily?.day(Date.now())||new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+function diagnosisPending(){const from=diagnosisUnit?.diagnosis.homeworkFrom;return !!(diagnosisPool&&global.HomeworkDiagnosis&&from&&koreaDay()>=from&&!(loadDiagnosis().doneDays||[]).some(d=>d>=from));}
+function renderDiagnosisHomework(home){
+ const card=el('section','guided-next diagnosis-homework');card.id='diagnosis-homework';
+ card.append(el('small','','선생님이 정한 숙제'),el('h3','',diagnosisUnit.id+'단원 · 진단 10문제'),el('p','','10문제를 풀어요. 틀리면 확인 문제가 나오고, 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요. 한 판을 마치면 숙제 끝이에요.'));
+ const b=el('button','act primary',loadRun(diagnosisSetId('ten'))?'숙제 이어 하기':'숙제로 시작하기');b.type='button';b.id='diagnosis-homework-start';b.onclick=()=>launchStudy('homework',()=>startDiagnosis('ten'));
+ card.appendChild(b);home.appendChild(card);
+}
 function renderDiagnosisCard(home){
  if(!diagnosisPool||!global.HomeworkDiagnosis)return;
  const D=global.HomeworkDiagnosis,state=loadDiagnosis(),last=state.last,card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course';
@@ -731,7 +740,8 @@ function renderDiagnosisCard(home){
 function paintDiagnosisResult(){
  const D=global.HomeworkDiagnosis,plan=run.set.diagnosisPlan,result=D.score(plan,run.logs),state=loadDiagnosis();
  const seen=[...new Set([...(state.seen||[]),...run.logs.map(l=>String(l.qid||'').replace(/#다시\d+$/,'')).filter(Boolean)])],current={...state.current};delete current[plan.mode];
- saveDiagnosis({...state,seen,current,last:{...result,mode:plan.mode,at:Date.now()}});
+ const doneDays=plan.mode==='ten'?[...new Set([...(state.doneDays||[]),koreaDay()])]:state.doneDays||[];
+ saveDiagnosis({...state,seen,current,doneDays,last:{...result,mode:plan.mode,at:Date.now()}});
  const box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
  box.append(el('small','',plan.mode==='ten'?'10문제 결과':'다른 유형 복습 결과'),el('h3','',result.max+'점 중 '+result.got+'점'));
  const list=el('ul');D.describe(result).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
@@ -758,6 +768,7 @@ function renderGuidedHome(){
  $('#page-title').textContent='기말고사 깨부수기';$('#page-intro').textContent='한 챕터씩 깃발을 세워요. 본문 모험과 마지막 복습으로 24문항 중 20문항을 노려 봐요!';
  const home=el('section','guided-home');home.id='guided-home';
  if(daily){const today=daily.snapshot(),card=el('section','guided-next');card.id='daily-homework-goal';card.append(el('h3','','오늘의 숙제 · '+today.date),el('p','',dailyText(today)));home.appendChild(card);}
+ if(diagnosisPending())renderDiagnosisHomework(home);
  const ladder=el('ol','exam-ladder');model.steps.forEach((step,i)=>{const item=el('li','exam-step'+(step.id===current.id?' current':'')+(step.done?' done':''));item.dataset.examStep=step.id;if(step.id===current.id)item.setAttribute('aria-current','step');item.append(el('span','step-number',String(i+1)),el('strong','',step.id+'단원'),el('small','',step.done?'본문 클리어':step.ready?(step.id===current.id?'모험 중':'다음 월드'):'준비 중'));ladder.appendChild(item);});home.appendChild(ladder);
  renderPilotHome(home,model.next);
  renderStageMap(model,home);
