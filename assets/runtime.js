@@ -2649,6 +2649,58 @@ var HomeworkDaily = (function () {
 })();
 
 ;
+/* 진단·낚시: 내용을 몰라서 틀리는지, 함정에 걸리는지, 바꿔 말한 참을 못 알아보는지 나누고 다음 문제를 고릅니다. */
+(function(global){
+'use strict';
+const LABEL={content:'내용 모름',trap:'함정에 걸림',paraphrase:'바꿔 말하기 약함',ok:'이해함'};
+function byId(pool){const map=new Map();for(const p of pool.parts)for(const q of p.items)map.set(q.id,q);return map;}
+function base(pool,suffix,name,parts,round){
+ return {id:pool.id.replace(/-pool$/,'-'+suffix),unitId:pool.unitId,chapterIds:pool.chapterIds,group:pool.group,name,level:'기본',revision:pool.revision,originPage:pool.originPage,timedMode:pool.timedMode,shuffleQuestions:true,diagnosisRound:round,parts};
+}
+// 1차 진단: 진단용 출제 내용마다 바꿔치기 거짓·함정 거짓·바꿔 말한 참을 하나씩.
+function check(pool){
+ const items=byId(pool),own=pool.facts.filter(f=>f.diagnose),part=(name,kind)=>({name,items:own.map(f=>items.get(f.items[kind]))});
+ return base(pool,'check','1차 진단 · '+own.length*3+'문제',[part('내용 · 바꿔치기 거짓','C'),part('함정 · 함정 거짓','T'),part('바꿔말하기 · 바꿔 말한 참','P')],1);
+}
+// 바꿔치기를 틀리면 내용 모름, 그것은 맞히고 함정을 틀리면 함정, 둘 다 맞히고 바꿔 말한 참을 틀리면 바꿔 말하기 약함.
+function verdict(pool,logs){
+ const ok=new Map();for(const l of logs)ok.set(l.qid,!!l.ok);
+ const facts=pool.facts.filter(f=>f.diagnose).map(f=>{
+  const [c,t,p]=['C','T','P'].map(k=>ok.get(f.items[k]));
+  if([c,t,p].includes(undefined))return {id:f.id,ref:f.ref,kind:'skipped',twist:null};
+  const kind=!c?'content':!t?'trap':!p?'paraphrase':'ok';
+  return {id:f.id,ref:f.ref,kind,twist:kind==='content'?f.twist.C:kind==='trap'?f.twist.T:null};
+ });
+ const counts={};for(const k of Object.keys(LABEL))counts[k]=facts.filter(f=>f.kind===k).length;
+ return {facts,counts};
+}
+// 낚시: 약한 갈래만 골라 진단에 쓰지 않은 출제 내용에서 다시 묻는다. 맞는 문장을 섞어 X만 찍지 못하게 한다.
+function fishing(pool,result){
+ const items=byId(pool),rest=pool.facts.filter(f=>!f.diagnose),used=new Set(),parts=[];
+ const pick=(facts,kind,n,avoid=[])=>{const out=[];for(const f of [...facts.filter(f=>!avoid.includes(f.ref)),...facts.filter(f=>avoid.includes(f.ref))]){const id=f.items[kind];if(out.length<n&&!used.has(id)){used.add(id);out.push(items.get(id));}}return out;};
+ const content=result.facts.filter(f=>f.kind==='content').slice(0,4).map(m=>pool.facts.find(f=>f.id===m.id));
+ if(content.length)parts.push({name:'내용 · 근거 보고 다시',items:[...pick(content,'O',4),...pick(content,'C',4)]});
+ for(const twist of [...new Set(result.facts.filter(f=>f.kind==='trap').map(f=>f.twist))]){
+  const refs=result.facts.filter(f=>f.kind==='trap'&&f.twist===twist).map(f=>f.ref);
+  parts.push({name:'함정 · '+twist,twist,items:[...pick(rest.filter(f=>f.twist.T===twist),'T',3,refs),...pick(rest,'P',1,refs)]});
+ }
+ if(result.counts.paraphrase)parts.push({name:'바꿔말하기 · 다시',items:[...pick(rest,'P',3),...pick(rest,'C',1)]});
+ const total=parts.reduce((n,p)=>n+p.items.length,0);
+ return total?base(pool,'fish','낚시 · '+total+'문제',parts,2):null;
+}
+// 낚시 묶음을 다 맞히면 실수, 하나라도 또 틀리면 약점.
+function fishingResult(set,logs){
+ const ok=new Map();for(const l of logs)ok.set(l.qid,!!l.ok);
+ return set.parts.map(p=>{const got=p.items.filter(q=>ok.get(q.id)).length;return {name:p.name,got,total:p.items.length,steady:got===p.items.length};});
+}
+function describe(result){
+ const traps=new Map();for(const f of result.facts)if(f.kind==='trap')traps.set(f.twist,(traps.get(f.twist)||0)+1);
+ return ['content','trap','paraphrase','ok'].map(k=>LABEL[k]+' '+result.counts[k]+'개'+(k==='trap'&&traps.size?' ('+[...traps].map(([t,n])=>t+' '+n).join(', ')+')':''));
+}
+global.HomeworkDiagnosis={LABEL,check,verdict,fishing,fishingResult,describe};
+})(typeof window==='undefined'?globalThis:window);
+
+;
 /* 세 페이지의 공통 문제 엔진. 기존 문제와 기록 형식을 유지합니다. */
 (function (global) {
 'use strict';
@@ -3348,6 +3400,46 @@ function renderStageMap(model,home){
  }
  map.appendChild(road);home.appendChild(map);
 }
+/* ---- 진단·낚시 시범: 단원 자료에 진단 문장 묶음이 있을 때만 보입니다. ---- */
+const diagnosisUnit=options.units?.find(u=>u.diagnosis),diagnosisPool=diagnosisUnit&&{id:diagnosisUnit.diagnosis.setId,dataFile:diagnosisUnit.diagnosis.dataFile};
+const diagnosisKey=PREFIX+'diagnosis_'+(diagnosisPool?.id||''),diagnosisSetId=round=>diagnosisPool.id.replace(/-pool$/,'-'+round);
+function loadDiagnosis(){try{return JSON.parse(localStorage.getItem(diagnosisKey)||'{}')||{};}catch(_){return {};}}
+function saveDiagnosis(value){try{localStorage.setItem(diagnosisKey,JSON.stringify(value));}catch(_){}}
+async function startDiagnosis(round,fresh=false){
+ try{await loadSet(diagnosisPool);}catch(_){loadingStatus.textContent='진단 문제를 불러오지 못했어요. 다시 눌러 주세요.';loadingStatus.hidden=false;return;}
+ if(fresh){clearRun(diagnosisSetId('check'));clearRun(diagnosisSetId('fish'));saveDiagnosis({});}
+ const D=global.HomeworkDiagnosis,set=round==='check'?D.check(diagnosisPool):D.fishing(diagnosisPool,loadDiagnosis().check);
+ if(set){manualSelection=false;start(set,fresh?null:loadRun(set.id));}
+}
+function renderDiagnosisCard(home){
+ if(!diagnosisPool||!global.HomeworkDiagnosis)return;
+ const D=global.HomeworkDiagnosis,saved=loadDiagnosis(),card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course';
+ card.append(el('small','','시범 · 진단과 낚시'),el('h3','',diagnosisUnit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','30문제로 내용을 몰라서 틀리는지, 함정에 걸리는지, 바꿔 말한 맞는 문장을 못 알아보는지 나눠요. 약한 쪽만 골라 낚시 문제를 더 줘요.'));
+ if(saved.check)card.appendChild(el('p','diagnosis-line','1차 진단 · '+D.describe(saved.check).join(' · ')));
+ if(saved.fish)card.appendChild(el('p','diagnosis-line','낚시 · '+saved.fish.map(p=>p.name+' '+p.got+'/'+p.total+(p.steady?' 실수':' 약점')).join(' · ')));
+ const add=(label,id,action)=>{const b=el('button','act ghost',label);b.type='button';b.id=id;b.onclick=()=>continueStudy(action);card.appendChild(b);};
+ if(!saved.check)add(loadRun(diagnosisSetId('check'))?'진단 이어 하기':'진단 시작하기','diagnosis-start',()=>startDiagnosis('check'));
+ else{if(saved.check.fishTotal&&!saved.fish)add('낚시 문제 '+saved.check.fishTotal+'개 풀기','diagnosis-fish',()=>startDiagnosis('fish'));add('진단 다시 하기','diagnosis-restart',()=>startDiagnosis('check',true));}
+ home.appendChild(card);
+}
+function paintDiagnosisResult(){
+ const D=global.HomeworkDiagnosis,box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
+ if(run.set.diagnosisRound===1){
+  const result=D.verdict(diagnosisPool,run.logs),fish=D.fishing(diagnosisPool,result),lines=D.describe(result);
+  saveDiagnosis({check:{...result,at:Date.now(),fishTotal:fish?fish.parts.reduce((n,p)=>n+p.items.length,0):0}});
+  box.append(el('small','','1차 진단 결과'),el('h3','',fish?'약한 쪽을 찾았어요':'모두 이해했어요!'));
+  const list=el('ul');lines.forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
+  box.appendChild(el('p','','내용 모름: 바꿔치기한 거짓을 맞다고 함 · 함정에 걸림: 내용은 아는데 비튼 문장에 속음 · 바꿔 말하기 약함: 말을 바꾼 맞는 문장을 틀리다고 함'));
+  if(fish){const b=el('button','act primary','낚시 문제 '+fish.parts.reduce((n,p)=>n+p.items.length,0)+'개 풀기 →');b.type='button';b.id='diagnosis-fish-now';b.onclick=()=>continueStudy(()=>startDiagnosis('fish'));box.appendChild(b);}
+  logStudentEvent('diagnosis','1차 진단 · '+lines.join(' · '));
+ }else{
+  const parts=D.fishingResult(run.set,run.logs);saveDiagnosis({...loadDiagnosis(),fish:parts});
+  box.append(el('small','','낚시 결과'),el('h3','',parts.every(p=>p.steady)?'이번엔 모두 맞혔어요 · 실수였던 것 같아요':'다시 걸린 곳은 약점으로 남겨 둘게요'));
+  const list=el('ul');parts.forEach(p=>list.appendChild(el('li','',p.name+' · '+p.got+'/'+p.total+' · '+(p.steady?'실수였어요':'약점이에요'))));box.appendChild(list);
+  logStudentEvent('diagnosis','낚시 · '+parts.map(p=>p.name+' '+p.got+'/'+p.total).join(' · '));
+ }
+ $('#scr-end .result').before(box);
+}
 function renderHardCourses(model,home){
  const courses=model.steps.filter(u=>u.hard?.sets.length&&(u.hard.unlocked||u.id===model.current.id));if(!courses.length)return;
  const section=el('section','hard-courses');section.id='hard-courses';section.setAttribute('aria-label','선택형 하드 난이도');
@@ -3382,6 +3474,7 @@ function renderGuidedHome(){
   actions.append(button,classButton);card.append(actions,el('p','study-mode-guide',daily?'오늘의 문단 목표 또는 학습 시간 목표를 채우면 알려 드려요. 풀던 문제는 계속 풀 수 있어요.':'숙제: 전체화면 · 30분 달성 안내 · 탭 이동 알림 / 수업: 숙제용 제한 없이 진행'));home.appendChild(card);
  }else home.appendChild(el('p','guided-complete',model.phase==='complete'?'본문과 보충 복습까지 완주! 이제 24문항 중 20문항 목표에 도전해 봐요.':'다음 '+current.id+'단원 자료를 준비 중이에요. 준비되면 모험이 자동으로 이어집니다.'));
  renderHardCourses(model,home);
+ renderDiagnosisCard(home);
  const rewards=el('details','journey-rules');rewards.append(el('summary','','상자와 예상 정답률은 어떻게 올라가나요?'),el('p','','현재 단원과 전체 코스 각각 복습 포함 진행률 60%에서 상자 누적 1개, 85%에서 2개, 100%에서 3개를 받아요. 새 단계에 오른 만큼만 지급해요. 정답률은 단계 전에도 조금씩 표시돼요.'),el('p','','단원 예상치는 본문 진도를 3/4(75%) 목표에 연속 환산해요. 전체는 일곱 단원의 본문으로 18/24, 마지막 보충과 복습으로 2/24를 더해 20/24 목표에 도달하는 학습 지표예요. 실제 연습 정답률은 별도로 표시해요.'));home.appendChild(rewards);
  const supplements=el('details','supplement-world');supplements.id='supplement-world';supplements.append(el('summary','','맨 마지막 코스 · 단원별 보충 자료'),el('p','','본문 일곱 월드를 먼저 지나고 비판적 읽기·인문·예술 개념과 남겨 둔 유형 복습을 차례로 정리해요. 기존 기록은 유지됩니다.'));
  for(const u of model.steps){const row=el('p');row.append(el('strong','',u.id+'단원 보충 자료'),el('span','',u.ready?(u.supplementDone?' · 복습 완료':' · 본문 코스 뒤에 공부해요'):' · 자료 준비 중'));supplements.appendChild(row);}home.appendChild(supplements);
@@ -4333,6 +4426,7 @@ function finish(){
   $('#e-meta').textContent = '틀린 문항 '+wrongN+'개 · 총 '+Math.floor(dur/60)+'분 '+(dur%60)+'초 · 문항당 평균 '+(dur/run.list.length).toFixed(1)+'초';
   $('#e-rows').innerHTML = parts.map(p=>'<div class="row"><span class="nm">'+p.name+'</span><span class="track"><span class="fill" style="width:'+(p.got/p.max*100)+'%"></span></span><span class="val">'+p.got+'/'+p.max+'</span></div>').join('');
   global.HomeworkResults.render({logs:run.logs,summary:outcomeSummary,wrongs:$('#e-wrongs'),findQuestion,classified:!!options.units||['development','traps'].includes(options.page)});
+  document.getElementById('diagnosis-result')?.remove();if(run.set.diagnosisRound&&!run.retry&&diagnosisPool?._loaded)paintDiagnosisResult();
 
   enqueue({kind:'summary', uid:UID, session:run.session, set:run.set.group+' · '+run.set.name+(run.retry?' (오답)':''), attempt:run.attempt,
            score:total, max, wrong:wrongN, sec:dur, startedAt:stamp(run.startedAt), endedAt:stamp(endAt),

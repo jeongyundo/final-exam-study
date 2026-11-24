@@ -584,3 +584,7 @@ body.socratic-active #question-help {display:none!important}
 /* 학생 첫 화면: 지금 할 미션 하나만. 통계·규칙·선택 메뉴는 선생님 진행현황에서 봅니다. */
 body.units-home #page-intro,#guided-home>#socratic-home-card:not(:has(.act.ghost)),#guided-home>#intro-ox-practice,#guided-home>.journey-stats,#guided-home>.journey-overall,#guided-home>.journey-cheer,#guided-home>.journey-rules,#guided-home>.supplement-world,#guided-home>.hard-courses:not(:has(button:enabled)),#guided-home .guided-knowledge,#guided-home .guided-next>h4,#guided-home .study-mode-guide{display:none}
 #guided-home{display:flex;flex-direction:column}#daily-homework-goal{order:-3}#guided-home>.exam-ladder{order:-2}#guided-home>.guided-next:not([id]),#guided-home>.guided-complete{order:-1}
+.diagnosis-course,.diagnosis-result{margin:18px 0}
+.diagnosis-course .act,.diagnosis-result .act{margin:8px 8px 0 0}
+.diagnosis-line{font-weight:700;color:#4b3b6b}
+.diagnosis-result ul{margin:8px 0 0;padding-left:20px;line-height:1.7}
