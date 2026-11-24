@@ -1,7 +1,7 @@
 /* The student follows one curriculum. All counts use existing saved attempts. */
 (function(global){
 'use strict';
-const steps=['2-2','3-1','3-2','5-2','6-1','6-2'];
+const steps=['2-2','3-1','3-2','5-2','6-1','6-2','6-3'];
 const size=set=>set.parts.reduce((n,p)=>n+p.items.length,0);
 // Hard mode contains the original textbook sets; type practice only repeats their questions.
 // Concept sets, including their advanced questions, remain in the final supplement.
@@ -27,7 +27,7 @@ function order(sets,units){
   const own=sets.filter(s=>s.unitId===id&&!s.isTypePractice&&!s.isVocabularyPractice&&s.unitType!=='concept'&&!isHardSet(s));
   result.push(...unitOrder(own,unit));
  }
- // All six basic textbook courses come first, followed by each unit's existing supplements.
+ // Every basic textbook course comes first, followed by each unit's existing supplements.
  for(const id of steps)result.push(...sets.filter(s=>s.unitId===id&&!s.isTypePractice&&s.unitType==='concept'));
  return result;
 }
@@ -61,8 +61,8 @@ function build({sets,units,storage,prefix,page}){
  });
  const bodyCurrent=ladder.find(s=>!s.done),phase=bodyCurrent?'body':ladder.some(s=>!s.supplementDone)?'supplement':'complete',current=bodyCurrent||ladder.find(s=>!s.supplementDone)||ladder.at(-1);
  const eligible=phase==='body'?current.sets:phase==='supplement'?[...current.supplements,...current.extraReviews]:[],next=nextState(eligible);
- const bodyProgress=ladder.reduce((n,u)=>n+u.progress,0)/6,supplementProgress=ladder.reduce((n,u)=>n+u.supplementProgress,0)/6,progress=(bodyProgress*24+supplementProgress*6)/30;
- return {steps:ladder,current,phase,progress,expectedAccuracy:(18*bodyProgress+2*supplementProgress)/24*100,chaptersDone:ladder.flatMap(s=>s.chapters).filter(c=>c.done).length,chaptersTotal:24,next,reviewCount:eligible.reduce((n,s)=>n+s.reviewLeft,0),completedSteps:ladder.filter(s=>s.done).length};
+ const bodyProgress=ladder.reduce((n,u)=>n+u.progress,0)/steps.length,supplementProgress=ladder.reduce((n,u)=>n+u.supplementProgress,0)/steps.length,progress=(bodyProgress*4+supplementProgress)/5;
+ return {steps:ladder,current,phase,progress,expectedAccuracy:(18*bodyProgress+2*supplementProgress)/24*100,chaptersDone:ladder.flatMap(s=>s.chapters).filter(c=>c.done).length,chaptersTotal:steps.length*4,next,reviewCount:eligible.reduce((n,s)=>n+s.reviewLeft,0),completedSteps:ladder.filter(s=>s.done).length};
 }
 function knowledge(set,kind){
  if(kind==='review')return ['문제 답을 틀린 문항은 처음부터 다시 풀어요.','근거만 틀린 문항은 근거 묶음만 다시 골라요.','오답을 모두 확인한 뒤 다음 학습으로 넘어가요.'];

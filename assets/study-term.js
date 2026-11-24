@@ -1,7 +1,7 @@
 /* A new exam has its own progress keys; prior exam data cannot recreate review obligations. */
 (function(global){
 'use strict';
-const term={id:'final2026',label:'2학기 기말고사',page:'units-final2026',storagePrefix:'practice_units_final2026_',activeUnits:['2-2','3-1','3-2','5-2','6-1','6-2'],examSteps:['2-2','3-1','3-2','5-2','6-1','6-2']};
+const term={id:'final2026',label:'2학기 기말고사',page:'units-final2026',storagePrefix:'practice_units_final2026_',activeUnits:['2-2','3-1','3-2','5-2','6-1','6-2','6-3'],examSteps:['2-2','3-1','3-2','5-2','6-1','6-2','6-3']};
 const retired=value=>String(value||'').includes('unit22-method-');
 term.acceptsKey=key=>key==='homework_adventure_v1'||String(key).startsWith(term.storagePrefix)&&!retired(key);
 term.clearPreviousReviews=storage=>{

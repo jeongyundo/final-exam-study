@@ -2,7 +2,7 @@
 /* A new exam has its own progress keys; prior exam data cannot recreate review obligations. */
 (function(global){
 'use strict';
-const term={id:'final2026',label:'2학기 기말고사',page:'units-final2026',storagePrefix:'practice_units_final2026_',activeUnits:['2-2','3-1','3-2','5-2','6-1','6-2'],examSteps:['2-2','3-1','3-2','5-2','6-1','6-2']};
+const term={id:'final2026',label:'2학기 기말고사',page:'units-final2026',storagePrefix:'practice_units_final2026_',activeUnits:['2-2','3-1','3-2','5-2','6-1','6-2','6-3'],examSteps:['2-2','3-1','3-2','5-2','6-1','6-2','6-3']};
 const retired=value=>String(value||'').includes('unit22-method-');
 term.acceptsKey=key=>key==='homework_adventure_v1'||String(key).startsWith(term.storagePrefix)&&!retired(key);
 term.clearPreviousReviews=storage=>{
@@ -685,7 +685,7 @@ async function open(options){
  }
  function attach(instance){
   application=instance;bar=node('section','student-account-bar');bar.setAttribute('aria-label','학생 계정');
-  const identity=node('div','student-account-identity');identity.append(node('strong','',isTest?session.name+' 계정 · 실제 학습과 분리':'이지우 학생'),...(term?[node('small','student-term',term.label+' · 6개 단원')]:[]),node('span','student-sync-status','기록 확인 중'),node('small','student-history-count'));bar.appendChild(identity);
+  const identity=node('div','student-account-identity');identity.append(node('strong','',isTest?session.name+' 계정 · 실제 학습과 분리':'이지우 학생'),...(term?[node('small','student-term',term.label+' · '+term.activeUnits.length+'개 단원')]:[]),node('span','student-sync-status','기록 확인 중'),node('small','student-history-count'));bar.appendChild(identity);
   const actions=node('div','student-account-actions'),sync=node('button','','동기화'),logout=node('button','','로그아웃');sync.type=logout.type='button';sync.id='student-sync-now';logout.id='student-logout';actions.append(sync,logout);bar.appendChild(actions);
   if(isTest){sync.hidden=true;const reset=node('button','','테스트 기록 초기화');reset.type='button';reset.id='student-test-reset';let resetTimer=null;reset.onclick=()=>{if(!reset.dataset.armed){reset.dataset.armed='1';reset.textContent='한 번 더 누르면 테스트 기록만 지워요';resetTimer=global.setTimeout(()=>{delete reset.dataset.armed;reset.textContent='테스트 기록 초기화';},4000);return;}global.clearTimeout(resetTimer);client.stop();global.dispatchEvent(new Event('pagehide'));global.queueMicrotask(()=>{const prefix='student:'+session.id+':',keys=[];for(let i=0;i<raw.length;i++){const key=raw.key(i);if(key?.startsWith(prefix))keys.push(key);}keys.forEach(key=>raw.removeItem(key));location.reload();});};actions.prepend(reset);}
   const conflict=node('div','student-conflict');conflict.hidden=true;conflict.appendChild(node('p','','같은 기록이 다른 기기에서도 바뀌었어요. 이 기기의 내용은 별도로 보관하고, 다른 기기에 저장된 진도를 불러올 수 있어요.'));
@@ -2056,7 +2056,7 @@ return {mount,teacher};
 /* The student follows one curriculum. All counts use existing saved attempts. */
 (function(global){
 'use strict';
-const steps=['2-2','3-1','3-2','5-2','6-1','6-2'];
+const steps=['2-2','3-1','3-2','5-2','6-1','6-2','6-3'];
 const size=set=>set.parts.reduce((n,p)=>n+p.items.length,0);
 // Hard mode contains the original textbook sets; type practice only repeats their questions.
 // Concept sets, including their advanced questions, remain in the final supplement.
@@ -2082,7 +2082,7 @@ function order(sets,units){
   const own=sets.filter(s=>s.unitId===id&&!s.isTypePractice&&!s.isVocabularyPractice&&s.unitType!=='concept'&&!isHardSet(s));
   result.push(...unitOrder(own,unit));
  }
- // All six basic textbook courses come first, followed by each unit's existing supplements.
+ // Every basic textbook course comes first, followed by each unit's existing supplements.
  for(const id of steps)result.push(...sets.filter(s=>s.unitId===id&&!s.isTypePractice&&s.unitType==='concept'));
  return result;
 }
@@ -2116,8 +2116,8 @@ function build({sets,units,storage,prefix,page}){
  });
  const bodyCurrent=ladder.find(s=>!s.done),phase=bodyCurrent?'body':ladder.some(s=>!s.supplementDone)?'supplement':'complete',current=bodyCurrent||ladder.find(s=>!s.supplementDone)||ladder.at(-1);
  const eligible=phase==='body'?current.sets:phase==='supplement'?[...current.supplements,...current.extraReviews]:[],next=nextState(eligible);
- const bodyProgress=ladder.reduce((n,u)=>n+u.progress,0)/6,supplementProgress=ladder.reduce((n,u)=>n+u.supplementProgress,0)/6,progress=(bodyProgress*24+supplementProgress*6)/30;
- return {steps:ladder,current,phase,progress,expectedAccuracy:(18*bodyProgress+2*supplementProgress)/24*100,chaptersDone:ladder.flatMap(s=>s.chapters).filter(c=>c.done).length,chaptersTotal:24,next,reviewCount:eligible.reduce((n,s)=>n+s.reviewLeft,0),completedSteps:ladder.filter(s=>s.done).length};
+ const bodyProgress=ladder.reduce((n,u)=>n+u.progress,0)/steps.length,supplementProgress=ladder.reduce((n,u)=>n+u.supplementProgress,0)/steps.length,progress=(bodyProgress*4+supplementProgress)/5;
+ return {steps:ladder,current,phase,progress,expectedAccuracy:(18*bodyProgress+2*supplementProgress)/24*100,chaptersDone:ladder.flatMap(s=>s.chapters).filter(c=>c.done).length,chaptersTotal:steps.length*4,next,reviewCount:eligible.reduce((n,s)=>n+s.reviewLeft,0),completedSteps:ladder.filter(s=>s.done).length};
 }
 function knowledge(set,kind){
  if(kind==='review')return ['문제 답을 틀린 문항은 처음부터 다시 풀어요.','근거만 틀린 문항은 근거 묶음만 다시 골라요.','오답을 모두 확인한 뒤 다음 학습으로 넘어가요.'];
@@ -3382,8 +3382,8 @@ function renderGuidedHome(){
   actions.append(button,classButton);card.append(actions,el('p','study-mode-guide',daily?'오늘의 문단 목표 또는 학습 시간 목표를 채우면 알려 드려요. 풀던 문제는 계속 풀 수 있어요.':'숙제: 전체화면 · 30분 달성 안내 · 탭 이동 알림 / 수업: 숙제용 제한 없이 진행'));home.appendChild(card);
  }else home.appendChild(el('p','guided-complete',model.phase==='complete'?'본문과 보충 복습까지 완주! 이제 24문항 중 20문항 목표에 도전해 봐요.':'다음 '+current.id+'단원 자료를 준비 중이에요. 준비되면 모험이 자동으로 이어집니다.'));
  renderHardCourses(model,home);
- const rewards=el('details','journey-rules');rewards.append(el('summary','','상자와 예상 정답률은 어떻게 올라가나요?'),el('p','','현재 단원과 전체 코스 각각 복습 포함 진행률 60%에서 상자 누적 1개, 85%에서 2개, 100%에서 3개를 받아요. 새 단계에 오른 만큼만 지급해요. 정답률은 단계 전에도 조금씩 표시돼요.'),el('p','','단원 예상치는 본문 진도를 3/4(75%) 목표에 연속 환산해요. 전체는 여섯 단원의 본문으로 18/24, 마지막 보충과 복습으로 2/24를 더해 20/24 목표에 도달하는 학습 지표예요. 실제 연습 정답률은 별도로 표시해요.'));home.appendChild(rewards);
- const supplements=el('details','supplement-world');supplements.id='supplement-world';supplements.append(el('summary','','맨 마지막 코스 · 단원별 보충 자료'),el('p','','본문 여섯 월드를 먼저 지나고 비판적 읽기·인문·예술 개념과 남겨 둔 유형 복습을 차례로 정리해요. 기존 기록은 유지됩니다.'));
+ const rewards=el('details','journey-rules');rewards.append(el('summary','','상자와 예상 정답률은 어떻게 올라가나요?'),el('p','','현재 단원과 전체 코스 각각 복습 포함 진행률 60%에서 상자 누적 1개, 85%에서 2개, 100%에서 3개를 받아요. 새 단계에 오른 만큼만 지급해요. 정답률은 단계 전에도 조금씩 표시돼요.'),el('p','','단원 예상치는 본문 진도를 3/4(75%) 목표에 연속 환산해요. 전체는 일곱 단원의 본문으로 18/24, 마지막 보충과 복습으로 2/24를 더해 20/24 목표에 도달하는 학습 지표예요. 실제 연습 정답률은 별도로 표시해요.'));home.appendChild(rewards);
+ const supplements=el('details','supplement-world');supplements.id='supplement-world';supplements.append(el('summary','','맨 마지막 코스 · 단원별 보충 자료'),el('p','','본문 일곱 월드를 먼저 지나고 비판적 읽기·인문·예술 개념과 남겨 둔 유형 복습을 차례로 정리해요. 기존 기록은 유지됩니다.'));
  for(const u of model.steps){const row=el('p');row.append(el('strong','',u.id+'단원 보충 자료'),el('span','',u.ready?(u.supplementDone?' · 복습 완료':' · 본문 코스 뒤에 공부해요'):' · 자료 준비 중'));supplements.appendChild(row);}home.appendChild(supplements);
  if(options.testMode){const manual=el('button','act ghost','문제를 골라서 테스트');manual.id='test-open-library';manual.type='button';manual.onclick=()=>{manualSelection=true;renderStart();};home.appendChild(manual);}
  if(!game.state().chests)chestControl(home);box.appendChild(home);
