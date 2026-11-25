@@ -39,6 +39,10 @@ function session(pool,{seen=[],missed=[],rand=Math.random,group=null}={}){
  }
  return {mode:'ten',group,slots:shuffled(picks,rand).map(p=>newSlot(pool,p.fact,p.kind)),redo:[]};
 }
+// 한 번에 풀기: 셋트(groups)마다 새 판을 짜서 차례로 이어 붙인다. 셋트별 거짓·참 비율은 그대로.
+function whole(pool,{groups=(pool.groups||[]).map(g=>g.id),...opt}={}){
+ return {mode:'ten',group:'all',groups,slots:groups.flatMap(group=>session(pool,{...opt,group}).slots),redo:[]};
+}
 // 나중 복습: 지난 판에서 처음에 틀린 출제 내용을, 다른 유형 문장으로. 안 본 문장 먼저.
 function review(pool,last,{seen=[]}={}){
  seen=new Set(seen);
@@ -94,7 +98,7 @@ function build(pool,plan){
  const items=byId(pool),count=new Map();
  const parts=plan.slots.map((s,i)=>({name:slotName(i),items:[items.get(s.main),...s.seq.map(e=>({...items.get(e.id),chainOf:s.main}))]}));
  if(plan.redo.length)parts.push({name:REDO,items:plan.redo.map(id=>{const n=(count.get(id)||0)+1;count.set(id,n);return redoItem(items.get(id),n);})});
- const g=plan.group&&groupOf(pool,plan.group),label=g?g.name+' · ':'';
+ const g=plan.group&&groupOf(pool,plan.group),label=plan.group==='all'?'전체 · ':g?g.name+' · ':'';
  return {id:setId(pool.id,plan.group,plan.mode),unitId:pool.unitId,chapterIds:pool.chapterIds,group:pool.group,name:label+(plan.mode==='ten'?plan.slots.length+'문제':'다른 유형으로 복습 · '+plan.slots.length+'문제'),level:'기본',revision:pool.revision,originPage:pool.originPage,timedMode:pool.timedMode,shuffleQuestions:false,diagnosisSession:plan.mode,diagnosisPlan:plan,parts};
 }
 const redoItem=(q,n)=>({...q,id:q.id+'#다시'+n,redoOf:q.id});
@@ -117,5 +121,5 @@ function describe(result){
 }
 // 다음 판에서 먼저 낼 함정: 처음에 틀렸고 갈래에서도 다 맞히지 못한 함정.
 const missedTwists=last=>(last?.slots||[]).filter(s=>!s.first).flatMap(s=>s.branches.filter(b=>!b.ok).map(b=>b.twist));
-global.HomeworkDiagnosis={KIND,PLAN,REDO,PARAPHRASE,setId,session,review,onAnswer,build,score,describe,missedTwists};
+global.HomeworkDiagnosis={KIND,PLAN,REDO,PARAPHRASE,setId,session,whole,review,onAnswer,build,score,describe,missedTwists};
 })(typeof window==='undefined'?globalThis:window);

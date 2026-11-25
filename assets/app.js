@@ -661,7 +661,7 @@ function renderStart(){
 }
 
 function learningState(){return global.HomeworkLearningPath.build({sets:SETS,units:options.units||[],storage:localStorage,prefix:PREFIX,page:options.page});}
-function startGuided(){const du=diagnosisPending();if(du){startDiagnosis(du,diagnosisLeft(du)[0].id,'ten');return;}const model=learningState(),target=model.next;const chosen=pilotFor(target?.set.id);if(chosen){startPilot(false,chosen);return;}const due=duePilot();if(due){startPilot(true,due);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
+function startGuided(){const du=diagnosisPending();if(du){startDiagnosis(du,'all','ten');return;}const model=learningState(),target=model.next;const chosen=pilotFor(target?.set.id);if(chosen){startPilot(false,chosen);return;}const due=duePilot();if(due){startPilot(true,due);return;}if(!target){renderStart();show('#scr-start');return;}manualSelection=false;document.body.classList.add('guided-study');if(target.kind==='review'){if(target.pending&&openPending(target.pending.key))return;start(target.set,target.retry,true);}else start(target.set,target.normal);}
 function isHardSet(set){return !!set&&global.HomeworkLearningPath.isHardSet(set);}
 function startHard(unitId){
  const unit=learningState().steps.find(u=>u.id===unitId),target=unit?.hard?.next;
@@ -710,7 +710,8 @@ async function startDiagnosis(du,gid,mode){
  const D=global.HomeworkDiagnosis,state=loadDiagnosis(du),g=diagnosisGroup(state,gid),saved=g.current?.[mode],resume=saved&&loadRun(diagnosisSetId(du,gid,mode));
  // 새 판은 그 단원 모든 셋트에서 지난번에 놓친 함정을 먼저 낸다.
  const missed=Object.values(state.groups).flatMap(x=>D.missedTwists(x.last));
- const plan=resume?saved:mode==='ten'?D.session(du.pool,{group:gid,seen:state.seen,missed}):D.review(du.pool,g.last,{seen:state.seen});
+ // 'all'은 한 번에 풀기: 숙제 중이면 남은 셋트만, 아니면 모든 셋트를 이어 낸다.
+ const plan=resume?saved:mode==='review'?D.review(du.pool,g.last,{seen:state.seen}):gid==='all'?D.whole(du.pool,{groups:(diagnosisPendingOf(du)?diagnosisLeft(du):du.groups).map(x=>x.id),seen:state.seen,missed}):D.session(du.pool,{group:gid,seen:state.seen,missed});
  if(!plan)return;
  if(!resume){clearRun(diagnosisSetId(du,gid,mode));saveDiagnosisGroup(du,state,gid,{current:{...g.current,[mode]:plan}});}
  manualSelection=false;start(D.build(du.pool,plan),resume||null);
@@ -728,25 +729,26 @@ function diagnosisLeft(du){const from=du.meta.homeworkFrom,state=loadDiagnosis(d
 const diagnosisPendingOf=du=>!!(global.HomeworkDiagnosis&&du.groups.length&&du.meta.homeworkFrom&&koreaDay()>=du.meta.homeworkFrom&&diagnosisLeft(du).length);
 const diagnosisPending=()=>diagnosisUnits.find(diagnosisPendingOf);
 function renderDiagnosisHomework(du,home){
- const left=diagnosisLeft(du),next=left[0],card=el('section','guided-next diagnosis-homework');card.id='diagnosis-homework';
+ const left=diagnosisLeft(du),count=left.reduce((n,g)=>n+g.count,0),card=el('section','guided-next diagnosis-homework');card.id='diagnosis-homework';
  card.append(el('small','','선생님이 정한 숙제'),el('h3','',du.unit.id+'단원 · 진단 '+du.groups.length+'셋트'),
-  el('p','','셋트마다 그 부분 내용을 물어요. 틀리면 확인 문제가 나오고, 처음에 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요. '+du.groups.length+'셋트를 모두 마치면 숙제 끝이에요.'),
+  el('p','','버튼 하나로 남은 셋트를 이어서 한 번에 풀어요. 틀리면 확인 문제가 나오고, 처음에 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요.'),
   el('p','diagnosis-line',du.groups.map(g=>g.name+' '+g.count+'문제'+(left.includes(g)?'':' ✓')).join(' · ')));
- const label=loadRun(diagnosisSetId(du,next.id,'ten'))?'숙제 이어 하기 · '+next.name:(left.length<du.groups.length?'다음 셋트 · ':'숙제로 시작하기 · ')+next.name;
- const b=el('button','act primary',label);b.type='button';b.id='diagnosis-homework-start';b.onclick=()=>launchStudy('homework',()=>startDiagnosis(du,next.id,'ten'));
+ const label=(loadRun(diagnosisSetId(du,'all','ten'))?'숙제 이어 하기':'숙제로 시작하기')+' · 전체 '+count+'문제';
+ const b=el('button','act primary',label);b.type='button';b.id='diagnosis-homework-start';b.onclick=()=>launchStudy('homework',()=>startDiagnosis(du,'all','ten'));
  card.appendChild(b);home.appendChild(card);
 }
 function renderDiagnosisCard(du,home){
  if(!global.HomeworkDiagnosis||!du.groups.length)return;
  const state=loadDiagnosis(du),card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course-'+du.unit.id;
  card.append(el('small','','시범 · 진단 셋트'),el('h3','',du.unit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','학습 경로 셋트마다 그 부분 내용을 물어요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 처음에 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
- for(const g of du.groups){
-  const s=diagnosisGroup(state,g.id),last=s.last,row=el('div','diagnosis-set');row.dataset.group=g.id;
+ // 맨 위 줄은 전체를 한 번에 푸는 판, 아래는 셋트별 판.
+ for(const g of [{id:'all',name:'전체',count:du.groups.reduce((n,x)=>n+x.count,0)},...du.groups]){
+  const s=diagnosisGroup(state,g.id),last=s.last,row=el('div','diagnosis-set'),key=g.id==='all'?'all-'+du.unit.id:g.id;row.dataset.group=g.id;
   row.appendChild(el('p','diagnosis-line',g.name+' · '+g.count+'문제'+(last?' · 지난 판 처음에 맞힘 '+last.first+'/'+last.max+' · 만회까지 '+last.got+'점':'')));
-  const add=(label,id,mode)=>{const b=el('button','act ghost',label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(du,g.id,mode));row.appendChild(b);};
+  const add=(label,id,mode,primary)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(du,g.id,mode));row.appendChild(b);};
   const resumeTen=s.current?.ten&&loadRun(diagnosisSetId(du,g.id,'ten')),resumeReview=s.current?.review&&loadRun(diagnosisSetId(du,g.id,'review')),misses=last?last.slots.filter(x=>!x.first).length:0;
-  add(resumeTen?'이어 풀기':'풀기','diagnosis-start-'+g.id,'ten');
-  if(resumeReview||misses)add(resumeReview?'복습 이어 풀기':'틀린 '+misses+'문제 다른 유형으로 복습','diagnosis-review-'+g.id,'review');
+  add(resumeTen?'이어 풀기':g.id==='all'?'한 번에 풀기':'풀기','diagnosis-start-'+key,'ten',g.id==='all');
+  if(resumeReview||misses)add(resumeReview?'복습 이어 풀기':'틀린 '+misses+'문제 다른 유형으로 복습','diagnosis-review-'+key,'review');
   card.appendChild(row);
  }
  home.appendChild(card);
@@ -754,17 +756,19 @@ function renderDiagnosisCard(du,home){
 function paintDiagnosisResult(du){
  const D=global.HomeworkDiagnosis,plan=run.set.diagnosisPlan,gid=plan.group,result=D.score(plan,run.logs),state=loadDiagnosis(du),g=diagnosisGroup(state,gid),wasPending=!!diagnosisPending();
  const seen=[...new Set([...(state.seen||[]),...run.logs.map(l=>String(l.qid||'').replace(/#다시\d+$/,'')).filter(Boolean)])],current={...g.current};delete current[plan.mode];
- const doneDays=plan.mode==='ten'?[...new Set([...(g.doneDays||[]),koreaDay()])]:g.doneDays||[];
- saveDiagnosis(du,{...state,seen,groups:{...state.groups,[gid]:{...g,current,doneDays,last:{...result,mode:plan.mode,group:gid,at:Date.now()}}}});
- const meta=du.groups.find(x=>x.id===gid),name=meta?meta.name+' · ':'',box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
+ // 한 판을 마치면 그 셋트(한 번에 풀기면 그 판에 든 셋트 모두)를 오늘 한 것으로 적는다.
+ const groups={...state.groups,[gid]:{...g,current,last:{...result,mode:plan.mode,group:gid,at:Date.now()}}};
+ if(plan.mode==='ten')for(const id of gid==='all'?plan.groups||[]:[gid])groups[id]={...groups[id],doneDays:[...new Set([...(groups[id]?.doneDays||[]),koreaDay()])]};
+ saveDiagnosis(du,{...state,seen,groups});
+ const meta=du.groups.find(x=>x.id===gid),name=gid==='all'?'전체 · ':meta?meta.name+' · ':'',box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
  box.append(el('small','',du.unit.id+'단원 '+name+(plan.mode==='ten'?'셋트 결과':'다른 유형 복습 결과')),el('h3','','처음에 맞힘 '+result.first+' / '+result.max),el('p','diagnosis-line','만회까지 '+result.max+'점 중 '+result.got+'점'));
  const list=el('ul');D.describe(result).slice(1).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
  const nextDu=diagnosisPending(),left=nextDu?diagnosisLeft(nextDu):[],misses=result.slots.filter(s=>!s.first).length;
  if(wasPending&&!nextDu)box.appendChild(el('p','diagnosis-line','오늘 숙제 끝! '+du.groups.length+'셋트를 모두 마쳤어요.'));
  const add=(label,id,target,group,mode,primary)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(target,group,mode));box.appendChild(b);};
- if(left.length)add('다음 셋트 · '+(nextDu===du?'':nextDu.unit.id+'단원 ')+left[0].name+' →','diagnosis-next-set',nextDu,left[0].id,'ten',true);
+ if(left.length)add('다음 숙제 · '+(nextDu===du?'':nextDu.unit.id+'단원 ')+'전체 '+left.reduce((n,x)=>n+x.count,0)+'문제 →','diagnosis-next-set',nextDu,'all','ten',true);
  if(misses)add('틀린 '+misses+'문제 다른 유형으로 복습'+(left.length?'':' →'),'diagnosis-review-now',du,gid,'review',!left.length);
- add('이 셋트 새로 풀기','diagnosis-next-ten',du,gid,'ten',!left.length&&!misses);
+ add(gid==='all'?'전체 새로 풀기':'이 셋트 새로 풀기','diagnosis-next-ten',du,gid,'ten',!left.length&&!misses);
  $('#e-rows').replaceChildren();
  logStudentEvent('diagnosis',du.unit.id+'단원 '+name+(plan.mode==='ten'?'셋트':'복습')+' · '+result.max+'점 중 '+result.got+'점 · '+D.describe(result).join(' · '));
  $('#scr-end .result').before(box);
