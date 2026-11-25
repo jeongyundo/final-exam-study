@@ -2649,7 +2649,7 @@ var HomeworkDaily = (function () {
 })();
 
 ;
-/* 진단 셋트: 학습 경로 챕터(1문단 / 2문단 / 3·4문단 / 5문단)마다 한 판. 출제 내용 수만큼(5개 또는 10개) 1문제 1점.
+/* 진단 셋트: 학습 경로 챕터(6-1은 1문단 / 2문단 / 3·4문단 / 5문단)마다 한 판. 출제 내용 수만큼(5·10·15개) 1문제 1점.
    틀리면 그 문장에 든 함정마다 갈래를 나눠 확인한다. 갈래에서 또 틀리면 같은 함정의 새 문장이 한 번 더 나오고,
    갈래를 모두 맞히면 그 문제는 +1(만회). 만회했더라도 처음에 틀린 문장은 판 끝에서 맞힐 때까지 다시 푼다.
    (확인 문장·섞는 문장의 오답은 다시 풀기에 넣지 않는다: 하위권 숙제 양이 몇 배로 불어서.)
@@ -2660,7 +2660,8 @@ const KIND={T:'함정 거짓',C:'바꿔치기 거짓',P:'바꿔 말한 참',O:'�
 // 거짓 5(함정 3·바꿔치기 2), 참 5(바꿔 말한 참 3·원문 참 2): O만 찍어도, X만 찍어도 5점이다.
 const PLAN=['T','T','T','C','C','P','P','P','O','O'];
 const PLAN5=[['T','T','C','P','O'],['T','C','P','P','O']];  // 5문제 셋트: 거짓 3·참 2 또는 거짓 2·참 3을 고루
-const planFor=(n,rand)=>n>=10?PLAN:PLAN5[rand()<0.5?0:1];
+// 10개마다 PLAN, 남은 5개는 PLAN5(6-3의 3·4·5문단처럼 15개면 둘을 이어 붙인다).
+const planFor=(n,rand)=>Array.from({length:Math.floor(n/10)},()=>PLAN).flat().concat(n%10>=5?PLAN5[rand()<0.5?0:1]:[]);
 const OTHER={T:['C','P','O'],C:['T','P','O'],P:['T','C','O'],O:['P','T','C']};  // 복습에서 물을 다른 유형 순서
 const PARAPHRASE='바꿔 말하기';  // 맞는 문장을 틀렸을 때의 갈래
 const BRANCH_LIMIT=2;            // 갈래 하나에서 이어 나오는 문장은 2개까지(3개면 찍어도 거의 다 만회돼서)
@@ -2683,7 +2684,7 @@ function session(pool,{seen=[],missed=[],rand=Math.random,group=null}={}){
  seen=new Set(seen);const used=new Set(),picks=[],paragraphs=new Map(),refs=group&&groupOf(pool,group).refs;
  const facts=refs?pool.facts.filter(f=>refs.includes(f.ref)):pool.facts;
  const cost=(f,kind)=>{const ts=twistsOf(f,kind);return (seen.has(f.items[kind])?100:0)-(ts.some(t=>missed.includes(t))?50:0)-Math.max(0,...ts.map(t=>examCount(pool,t)))+(paragraphs.get(f.ref)||0)*3+rand();};
- for(const kind of planFor(facts.length,rand)){
+ for(const kind of planFor(refs?facts.length:10,rand)){  // 셋트 없이 부르면 전체에서 10문제
   const twists=new Set(picks.filter(p=>p.kind==='T').map(p=>p.fact.twist.T));
   const f=facts.filter(f=>!used.has(f.id)).map(f=>({f,c:cost(f,kind)+(kind==='T'&&twists.has(f.twist.T)?20:0)})).sort((a,b)=>a.c-b.c)[0].f;
   used.add(f.id);paragraphs.set(f.ref,(paragraphs.get(f.ref)||0)+1);picks.push({fact:f,kind});
