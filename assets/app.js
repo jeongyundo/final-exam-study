@@ -729,7 +729,7 @@ function diagnosisPending(){const from=diagnosisMeta?.homeworkFrom;return !!(dia
 function renderDiagnosisHomework(home){
  const left=diagnosisLeft(),next=left[0],card=el('section','guided-next diagnosis-homework');card.id='diagnosis-homework';
  card.append(el('small','','선생님이 정한 숙제'),el('h3','',diagnosisUnit.id+'단원 · 진단 '+diagnosisGroups.length+'셋트'),
-  el('p','','셋트마다 그 부분 내용을 물어요. 틀리면 확인 문제가 나오고, 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요. '+diagnosisGroups.length+'셋트를 모두 마치면 숙제 끝이에요.'),
+  el('p','','셋트마다 그 부분 내용을 물어요. 틀리면 확인 문제가 나오고, 처음에 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요. '+diagnosisGroups.length+'셋트를 모두 마치면 숙제 끝이에요.'),
   el('p','diagnosis-line',diagnosisGroups.map(g=>g.name+' '+g.count+'문제'+(left.includes(g)?'':' ✓')).join(' · ')));
  const label=loadRun(diagnosisSetId(next.id,'ten'))?'숙제 이어 하기 · '+next.name:(left.length<diagnosisGroups.length?'다음 셋트 · ':'숙제로 시작하기 · ')+next.name;
  const b=el('button','act primary',label);b.type='button';b.id='diagnosis-homework-start';b.onclick=()=>launchStudy('homework',()=>startDiagnosis(next.id,'ten'));
@@ -738,10 +738,10 @@ function renderDiagnosisHomework(home){
 function renderDiagnosisCard(home){
  if(!diagnosisPool||!global.HomeworkDiagnosis||!diagnosisGroups.length)return;
  const state=loadDiagnosis(),card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course';
- card.append(el('small','','시범 · 진단 셋트'),el('h3','',diagnosisUnit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','학습 경로 셋트마다 그 부분 내용을 물어요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
+ card.append(el('small','','시범 · 진단 셋트'),el('h3','',diagnosisUnit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','학습 경로 셋트마다 그 부분 내용을 물어요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 처음에 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
  for(const g of diagnosisGroups){
   const s=diagnosisGroup(state,g.id),last=s.last,row=el('div','diagnosis-set');row.dataset.group=g.id;
-  row.appendChild(el('p','diagnosis-line',g.name+' · '+g.count+'문제'+(last?' · 지난 판 '+last.max+'점 중 '+last.got+'점':'')));
+  row.appendChild(el('p','diagnosis-line',g.name+' · '+g.count+'문제'+(last?' · 지난 판 처음에 맞힘 '+last.first+'/'+last.max+' · 만회까지 '+last.got+'점':'')));
   const add=(label,id,mode)=>{const b=el('button','act ghost',label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(g.id,mode));row.appendChild(b);};
   const resumeTen=s.current?.ten&&loadRun(diagnosisSetId(g.id,'ten')),resumeReview=s.current?.review&&loadRun(diagnosisSetId(g.id,'review')),misses=last?last.slots.filter(x=>!x.first).length:0;
   add(resumeTen?'이어 풀기':'풀기','diagnosis-start-'+g.id,'ten');
@@ -756,8 +756,8 @@ function paintDiagnosisResult(){
  const doneDays=plan.mode==='ten'?[...new Set([...(g.doneDays||[]),koreaDay()])]:g.doneDays||[];
  saveDiagnosis({...state,seen,groups:{...state.groups,[gid]:{...g,current,doneDays,last:{...result,mode:plan.mode,group:gid,at:Date.now()}}}});
  const meta=diagnosisGroups.find(x=>x.id===gid),name=meta?meta.name+' · ':'',box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
- box.append(el('small','',name+(plan.mode==='ten'?'셋트 결과':'다른 유형 복습 결과')),el('h3','',result.max+'점 중 '+result.got+'점'));
- const list=el('ul');D.describe(result).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
+ box.append(el('small','',name+(plan.mode==='ten'?'셋트 결과':'다른 유형 복습 결과')),el('h3','','처음에 맞힘 '+result.first+' / '+result.max),el('p','diagnosis-line','만회까지 '+result.max+'점 중 '+result.got+'점'));
+ const list=el('ul');D.describe(result).slice(1).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
  const left=diagnosisPending()?diagnosisLeft():[],misses=result.slots.filter(s=>!s.first).length;
  if(wasPending&&!left.length)box.appendChild(el('p','diagnosis-line','오늘 숙제 끝! '+diagnosisGroups.length+'셋트를 모두 마쳤어요.'));
  const add=(label,id,group,mode,primary)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(group,mode));box.appendChild(b);};

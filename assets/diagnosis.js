@@ -1,6 +1,7 @@
 /* 진단 셋트: 학습 경로 챕터(1문단 / 2문단 / 3·4문단 / 5문단)마다 한 판. 출제 내용 수만큼(5개 또는 10개) 1문제 1점.
-   틀리면 그 문장에 든 함정마다 갈래를 나눠 확인한다. 갈래에서 또 틀리면 같은 함정의 새 문장이 이어 나오고,
-   갈래를 모두 맞히면 그 문제는 +1(만회). 만회했더라도 틀린 문장은 판 끝에서 맞힐 때까지 다시 푼다.
+   틀리면 그 문장에 든 함정마다 갈래를 나눠 확인한다. 갈래에서 또 틀리면 같은 함정의 새 문장이 한 번 더 나오고,
+   갈래를 모두 맞히면 그 문제는 +1(만회). 만회했더라도 처음에 틀린 문장은 판 끝에서 맞힐 때까지 다시 푼다.
+   (확인 문장·섞는 문장의 오답은 다시 풀기에 넣지 않는다: 하위권 숙제 양이 몇 배로 불어서.)
    나중 복습은 처음에 틀린 출제 내용을 다른 유형 문장으로 묻는다. */
 (function(global){
 'use strict';
@@ -11,7 +12,7 @@ const PLAN5=[['T','T','C','P','O'],['T','C','P','P','O']];  // 5문제 셋트: �
 const planFor=(n,rand)=>n>=10?PLAN:PLAN5[rand()<0.5?0:1];
 const OTHER={T:['C','P','O'],C:['T','P','O'],P:['T','C','O'],O:['P','T','C']};  // 복습에서 물을 다른 유형 순서
 const PARAPHRASE='바꿔 말하기';  // 맞는 문장을 틀렸을 때의 갈래
-const BRANCH_LIMIT=3;            // 갈래 하나에서 이어 나오는 문장은 3개까지
+const BRANCH_LIMIT=2;            // 갈래 하나에서 이어 나오는 문장은 2개까지(3개면 찍어도 거의 다 만회돼서)
 const REDO='오답 다시 풀기';
 function byId(pool){const map=new Map();for(const p of pool.parts)for(const q of p.items)map.set(q.id,q);return map;}
 const examCount=(pool,twist)=>pool.examFrequency?.[twist]||0;
@@ -68,10 +69,10 @@ function advance(pool,plan,i,b,seen,rand,out){
   slot.seq.push({id,b});out.push(id);return;
  }
 }
-// 답한 뒤 할 일. 틀리면 판 끝에 다시 풀 문장을 붙이고(맞힐 때까지), 갈래를 열거나 이어 간다.
+// 답한 뒤 할 일. 본문제를 틀리면 판 끝에 다시 풀 문장을 붙이고(맞힐 때까지), 갈래를 열거나 이어 간다.
 function onAnswer(pool,plan,q,ok,{seen=[],rand=Math.random}={}){
  seen=new Set(seen);const items=byId(pool),base=q.redoOf||q.id,ids=[],out={redo:null,insert:[]};
- if(!ok){const n=plan.redo.filter(id=>id===base).length+1;plan.redo.push(base);out.redo={...redoItem(items.get(base),n),part:REDO,pi:plan.slots.length};}
+ if(!ok&&plan.slots.some(s=>s.main===base)){const n=plan.redo.filter(id=>id===base).length+1;plan.redo.push(base);out.redo={...redoItem(items.get(base),n),part:REDO,pi:plan.slots.length};}
  if(!q.redoOf){
   const i=plan.slots.findIndex(s=>s.main===q.id||s.seq.some(e=>e.id===q.id));
   if(i>=0){
