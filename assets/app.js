@@ -698,7 +698,9 @@ function renderStageMap(model,home){
  map.appendChild(road);home.appendChild(map);
 }
 /* ---- 진단 셋트(시범): 진단 문장 묶음이 있는 단원(6-1·6-2)마다 카드가 생깁니다. 셋트는 학습 경로 챕터를 따르고, 규칙은 assets/diagnosis.js. ---- */
-const diagnosisUnits=(options.units||[]).filter(u=>u.diagnosis).map(u=>({unit:u,meta:u.diagnosis,pool:{id:u.diagnosis.setId,dataFile:u.diagnosis.dataFile},groups:u.diagnosis.groups||[],key:PREFIX+'diagnosisSets_'+u.diagnosis.setId}));
+// 문학과 영상처럼 학습 경로 밖의 단원은 options.diagnosisUnits로 온다. 이름은 label('문학과 영상 1-1'), 없으면 '6-1단원'.
+const diagnosisUnits=[...(options.units||[]),...(options.diagnosisUnits||[])].filter(u=>u.diagnosis).map(u=>({unit:u,meta:u.diagnosis,pool:{id:u.diagnosis.setId,dataFile:u.diagnosis.dataFile},groups:u.diagnosis.groups||[],key:PREFIX+'diagnosisSets_'+u.diagnosis.setId}));
+const diagnosisName=du=>du.unit.label||du.unit.id+'단원';
 const diagnosisFor=set=>set?.diagnosisPlan&&diagnosisUnits.find(du=>du.unit.id===set.unitId);
 const diagnosisSetId=(du,gid,mode)=>global.HomeworkDiagnosis.setId(du.pool.id,gid,mode);
 function loadDiagnosis(du){let v={};try{v=JSON.parse(localStorage.getItem(du.key)||'{}')||{};}catch(_){}v.groups=v.groups||{};return v;}
@@ -730,7 +732,7 @@ const diagnosisPendingOf=du=>!!(global.HomeworkDiagnosis&&du.groups.length&&du.m
 const diagnosisPending=()=>diagnosisUnits.find(diagnosisPendingOf);
 function renderDiagnosisHomework(du,home){
  const left=diagnosisLeft(du),count=left.reduce((n,g)=>n+g.count,0),card=el('section','guided-next diagnosis-homework');card.id='diagnosis-homework';
- card.append(el('small','','선생님이 정한 숙제'),el('h3','',du.unit.id+'단원 · 진단 '+du.groups.length+'셋트'),
+ card.append(el('small','','선생님이 정한 숙제'),el('h3','',diagnosisName(du)+' · 진단 '+du.groups.length+'셋트'),
   el('p','','버튼 하나로 남은 셋트를 이어서 한 번에 풀어요. 틀리면 확인 문제가 나오고, 처음에 틀린 문제는 끝에서 맞힐 때까지 다시 풀어요.'),
   el('p','diagnosis-line',du.groups.map(g=>g.name+' '+g.count+'문제'+(left.includes(g)?'':' ✓')).join(' · ')));
  const label=(loadRun(diagnosisSetId(du,'all','ten'))?'숙제 이어 하기':'숙제로 시작하기')+' · 전체 '+count+'문제';
@@ -740,7 +742,7 @@ function renderDiagnosisHomework(du,home){
 function renderDiagnosisCard(du,home){
  if(!global.HomeworkDiagnosis||!du.groups.length)return;
  const state=loadDiagnosis(du),card=el('section','hard-course unlocked diagnosis-course');card.id='diagnosis-course-'+du.unit.id;
- card.append(el('small','','시범 · 진단 셋트'),el('h3','',du.unit.id+'단원 · 왜 틀리는지 알아보기'),el('p','','학습 경로 셋트마다 그 부분 내용을 물어요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 처음에 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
+ card.append(el('small','',(du.unit.subject||'시범')+' · 진단 셋트'),el('h3','',diagnosisName(du)+' · 왜 틀리는지 알아보기'),el('p','',(du.unit.subject?'장면 묶음':'학습 경로 셋트')+'마다 그 부분 내용을 물어요. 틀리면 그 문장에 든 함정마다 확인 문제가 나와요. 갈래를 모두 맞히면 +1로 만회하고, 처음에 틀린 문제는 판 끝에서 맞힐 때까지 다시 풀어요.'));
  // 맨 위 줄은 전체를 한 번에 푸는 판, 아래는 셋트별 판.
  for(const g of [{id:'all',name:'전체',count:du.groups.reduce((n,x)=>n+x.count,0)},...du.groups]){
   const s=diagnosisGroup(state,g.id),last=s.last,row=el('div','diagnosis-set'),key=g.id==='all'?'all-'+du.unit.id:g.id;row.dataset.group=g.id;
@@ -761,16 +763,16 @@ function paintDiagnosisResult(du){
  if(plan.mode==='ten')for(const id of gid==='all'?plan.groups||[]:[gid])groups[id]={...groups[id],doneDays:[...new Set([...(groups[id]?.doneDays||[]),koreaDay()])]};
  saveDiagnosis(du,{...state,seen,groups});
  const meta=du.groups.find(x=>x.id===gid),name=gid==='all'?'전체 · ':meta?meta.name+' · ':'',box=el('section','hard-course unlocked diagnosis-result');box.id='diagnosis-result';
- box.append(el('small','',du.unit.id+'단원 '+name+(plan.mode==='ten'?'셋트 결과':'다른 유형 복습 결과')),el('h3','','처음에 맞힘 '+result.first+' / '+result.max),el('p','diagnosis-line','만회까지 '+result.max+'점 중 '+result.got+'점'));
+ box.append(el('small','',diagnosisName(du)+' '+name+(plan.mode==='ten'?'셋트 결과':'다른 유형 복습 결과')),el('h3','','처음에 맞힘 '+result.first+' / '+result.max),el('p','diagnosis-line','만회까지 '+result.max+'점 중 '+result.got+'점'));
  const list=el('ul');D.describe(result).slice(1).forEach(t=>list.appendChild(el('li','',t)));box.appendChild(list);
  const nextDu=diagnosisPending(),left=nextDu?diagnosisLeft(nextDu):[],misses=result.slots.filter(s=>!s.first).length;
  if(wasPending&&!nextDu)box.appendChild(el('p','diagnosis-line','오늘 숙제 끝! '+du.groups.length+'셋트를 모두 마쳤어요.'));
  const add=(label,id,target,group,mode,primary)=>{const b=el('button','act '+(primary?'primary':'ghost'),label);b.type='button';b.id=id;b.onclick=()=>continueStudy(()=>startDiagnosis(target,group,mode));box.appendChild(b);};
- if(left.length)add('다음 숙제 · '+(nextDu===du?'':nextDu.unit.id+'단원 ')+'전체 '+left.reduce((n,x)=>n+x.count,0)+'문제 →','diagnosis-next-set',nextDu,'all','ten',true);
+ if(left.length)add('다음 숙제 · '+(nextDu===du?'':diagnosisName(nextDu)+' ')+'전체 '+left.reduce((n,x)=>n+x.count,0)+'문제 →','diagnosis-next-set',nextDu,'all','ten',true);
  if(misses)add('틀린 '+misses+'문제 다른 유형으로 복습'+(left.length?'':' →'),'diagnosis-review-now',du,gid,'review',!left.length);
  add(gid==='all'?'전체 새로 풀기':'이 셋트 새로 풀기','diagnosis-next-ten',du,gid,'ten',!left.length&&!misses);
  $('#e-rows').replaceChildren();
- logStudentEvent('diagnosis',du.unit.id+'단원 '+name+(plan.mode==='ten'?'셋트':'복습')+' · '+result.max+'점 중 '+result.got+'점 · '+D.describe(result).join(' · '));
+ logStudentEvent('diagnosis',diagnosisName(du)+' '+name+(plan.mode==='ten'?'셋트':'복습')+' · '+result.max+'점 중 '+result.got+'점 · '+D.describe(result).join(' · '));
  $('#scr-end .result').before(box);
 }
 function renderHardCourses(model,home){
