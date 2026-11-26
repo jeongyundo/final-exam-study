@@ -3601,7 +3601,7 @@ function paintGuidedStatus(){guidedStatus.hidden=!guidedActive();if(!guidedActiv
  guidedStatus.replaceChildren(...run.set.diagnosisPlan?[]:[el('strong','',s.id+'단원 · '+(hard?'하드 난이도 · 선택 도전':model.phase==='supplement'?'보충 자료':(chapter.index+1)+'챕터 '+percent(chapter.progress*100)))]);
  const wallet=el('small','chapter-wallet');wallet.dataset.wallet='';guidedStatus.appendChild(wallet);refreshWallet();
  if(gains.length){const note=el('p','journey-earned','🎁 '+gains.join(' · '));$('#q-fb').appendChild(note);refreshWallet();}
- if(run?.list[run.idx]?._submitted&&!run.list[run.idx]?._evidencePhase){$('#q-fb').appendChild(el('p','journey-cheer',journeyCheer(model,s)));}
+ if(run?.list[run.idx]?._submitted&&!run.list[run.idx]?._evidencePhase&&!run.set.diagnosisPlan){$('#q-fb').appendChild(el('p','journey-cheer',journeyCheer(model,s)));}
 }
 function paintGuidedContinuation(){
  guidedContinue.hidden=!guidedActive();hardContinue.hidden=true;if(!guidedActive())return;
@@ -4252,11 +4252,12 @@ function showEvidenceExplanation(q,rejectedId,selectedId){
 function scrollToAnswerExplanation(){
   const panel=$('#evidence-explanation');
   if(!panel){$('#q-fb').scrollIntoView({block:'nearest',behavior:'instant'});return;}
-  const reading=panel.closest('.passage,.note'),anchor=reading?.querySelector('mark[data-evidence-id],mark.evidence-highlight');
-  const first=anchor?.getBoundingClientRect(),last=panel.getBoundingClientRect();
-  // Show the source and its annotation together when they fit; otherwise prioritize the explanation.
-  if(first&&last.bottom-first.top<window.innerHeight-48)anchor.scrollIntoView({block:'start',behavior:'instant'});
-  else panel.scrollIntoView({block:'nearest',behavior:'instant'});
+  const anchor=panel.closest('.passage,.note')?.querySelector('mark[data-evidence-id],mark.evidence-highlight'),question=$('#q-body .ask')||$('#q-body .claim')||$('#q-body .picks');
+  // 답한 뒤에도 문제(진술·O/X)가 보이게, 문제와 근거 중 위에 있는 것을 숙제 띠 바로 아래에 맞춘다. 해설은 그 아래로 이어 읽는다.
+  const tops=[question,anchor].filter(Boolean).map(n=>n.getBoundingClientRect().top);
+  if(!tops.length){panel.scrollIntoView({block:'nearest',behavior:'instant'});return;}
+  const bar=studyBar.hidden?0:studyBar.offsetHeight+(parseFloat(getComputedStyle(studyBar).top)||0);
+  window.scrollTo({top:window.scrollY+Math.min(...tops)-bar-8,behavior:'instant'});
 }
 
 function renderVocab(q, body){
@@ -4475,7 +4476,7 @@ function submit(forceTimeout){
   if(evidenceResult&&!evidenceResult.retired)paintEvidenceResult(q);
   else if(q.evidence?.valid?.length)paintAnswerEvidence(q);
   else{const explanation=el('div','feedback-explanation');explanation.innerHTML=['ox','mc','choice'].includes(q.type)?escapeHTML(conciseExplanation(q.summaryWhy||q.why)):msg;fb.appendChild(explanation);}
-  fb.appendChild(rewards);fb.appendChild(el('small','sec','풀이 시간 '+sec.toFixed(1)+'초'));
+  fb.appendChild(rewards);if(!run.set.diagnosisPlan)fb.appendChild(el('small','sec','풀이 시간 '+sec.toFixed(1)+'초'));
   document.querySelectorAll('#q-body button').forEach(b=>b.disabled=true);if($('#use-reading-size'))$('#use-reading-size').disabled=false;
   document.querySelectorAll('#q-body .chip, #q-body .zone').forEach(e=>e.style.pointerEvents='none');
   $('#q-check').style.display='none'; $('#q-next').style.display='';
