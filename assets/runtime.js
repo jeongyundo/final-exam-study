@@ -3597,7 +3597,8 @@ function renderGuidedHome(){
  if(!game.state().chests)chestControl(home);box.appendChild(home);
 }
 function paintGuidedStatus(){guidedStatus.hidden=!guidedActive();if(!guidedActive())return;const model=learningState(),s=journeyUnit(model),chapter=journeyChapter(s),hard=isHardSet(run.set);const gains=awardJourneyRewards(model);
- guidedStatus.replaceChildren(el('strong','',s.id+'단원 · '+(hard?'하드 난이도 · 선택 도전':model.phase==='supplement'?'보충 자료':(chapter.index+1)+'챕터 '+percent(chapter.progress*100))),el('span','',hard?'하드를 끝내지 않아도 다음 단원의 기본 숙제를 할 수 있어요.':'단원 '+percent(s.progress*100)+' · 연습 정답률 '+(s.practiceAccuracy==null?'시작 전':percent(s.practiceAccuracy))+' · 학습 기준 예상 '+percent(s.expectedAccuracy)));
+ // 문제 위 한 줄만 쓴다. 단원 진행·예상 정답률은 첫 화면에 있고, 진단 셋트는 챕터와 상관없어 챕터 표시도 뺀다.
+ guidedStatus.replaceChildren(...run.set.diagnosisPlan?[]:[el('strong','',s.id+'단원 · '+(hard?'하드 난이도 · 선택 도전':model.phase==='supplement'?'보충 자료':(chapter.index+1)+'챕터 '+percent(chapter.progress*100)))]);
  const wallet=el('small','chapter-wallet');wallet.dataset.wallet='';guidedStatus.appendChild(wallet);refreshWallet();
  if(gains.length){const note=el('p','journey-earned','🎁 '+gains.join(' · '));$('#q-fb').appendChild(note);refreshWallet();}
  if(run?.list[run.idx]?._submitted&&!run.list[run.idx]?._evidencePhase){$('#q-fb').appendChild(el('p','journey-cheer',journeyCheer(model,s)));}
